@@ -1,0 +1,33 @@
+# ~/.config/termask/config.toml
+# Generiert mit `termask init` — manuell bearbeiten ist OK.
+
+default_provider = "anthropic"
+
+system_prompt = """
+You are a helpful shell assistant.
+Answer concisely and always prefer practical shell commands, scripts, and one-liners.
+When writing scripts, use best practices: error handling, comments, portability.
+Format code blocks with triple backticks and the language name.
+"""
+
+[providers.anthropic]
+api_key = "sk-ant-..."
+model   = "claude-sonnet-4-6"
+
+[providers.openai]
+api_key = "sk-..."
+model   = "gpt-5.4-mini"
+
+[providers.ollama]
+base_url = "http://localhost:11434"
+model    = "llama3"
+
+[providers.groq]
+api_key  = "gsk_..."
+base_url = "https://api.groq.com/openai/v1/chat/completions"
+model    = "openai/gpt-oss-120b"
+
+[providers.together]
+api_key  = "..."
+base_url = "https://api.together.xyz/v1/chat/completions"
+model    = "moonshotai/Kimi-K2.5"
