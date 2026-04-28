@@ -100,7 +100,7 @@ func askCmd() *cobra.Command {
 	var files []string
 	var savePath string
 	var safetyMode bool
-	var renderMarkdown bool
+	var renderMarkdown bool // kept for backward compatibility; ask renders by default
 
 	cmd := &cobra.Command{
 		Use:   "ask [question]",
@@ -192,8 +192,9 @@ func askCmd() *cobra.Command {
 				}
 			}
 
+			renderOutput := shouldRenderAskOutput(plainOutput)
 			out := io.Writer(os.Stdout)
-			if renderMarkdown || cfg.RenderMarkdown {
+			if renderOutput {
 				out = nil
 			}
 			resp, err := ask.Run(ctx, cfg, ask.Request{
@@ -205,7 +206,7 @@ func askCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("%s: %w", pName, err)
 			}
-			if renderMarkdown || cfg.RenderMarkdown {
+			if renderOutput {
 				fmt.Print(markdown.Render(resp.Text))
 			}
 
@@ -245,7 +246,7 @@ func askCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a text file as explicit context")
 	cmd.Flags().StringVar(&savePath, "save", "", "Save the answer text to a file")
 	cmd.Flags().BoolVar(&safetyMode, "safety", false, "Analyze shell commands in the answer for risky patterns")
-	cmd.Flags().BoolVar(&renderMarkdown, "render", false, "Render Markdown when supported by the terminal")
+	cmd.Flags().BoolVar(&renderMarkdown, "render", false, "Deprecated: Markdown rendering is the default unless --plain is set")
 	return cmd
 }
 
@@ -296,12 +297,11 @@ func chatCmd() *cobra.Command {
 					ProviderName: providerName,
 					Query:        query,
 					History:      prior,
-					Out:          os.Stdout,
 				})
 				if err != nil {
 					return err
 				}
-				fmt.Println()
+				fmt.Print(markdown.Render(resp.Text))
 				session.Provider = resp.ProviderName
 				session.Model = resp.Model
 				session.AddUser(query)
@@ -865,6 +865,10 @@ func resolveTemplate(cfg config.Config, name string) (prompttpl.Template, error)
 		return prompttpl.Template{}, fmt.Errorf("unknown template %q — run `termask templates`", name)
 	}
 	return tpl, nil
+}
+
+func shouldRenderAskOutput(plainOutput bool) bool {
+	return !plainOutput
 }
 
 func chooseProvider() (string, error) {

@@ -10,6 +10,7 @@ import (
 	"github.com/yourusername/termask/internal/ask"
 	"github.com/yourusername/termask/internal/config"
 	"github.com/yourusername/termask/internal/history"
+	"github.com/yourusername/termask/internal/markdown"
 	"github.com/yourusername/termask/internal/provider"
 )
 
@@ -56,13 +57,12 @@ func Run(ctx context.Context, cfg config.Config) error {
 			ProviderName: providerName,
 			Query:        query,
 			History:      sessionMessages(session),
-			Out:          os.Stdout,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\nerror: %v\n", err)
 			continue
 		}
-		fmt.Println()
+		fmt.Print(markdown.Render(resp.Text))
 		session.Provider = resp.ProviderName
 		session.Model = resp.Model
 		session.AddUser(query)

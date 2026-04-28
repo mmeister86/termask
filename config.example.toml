@@ -4,7 +4,7 @@
 default_provider = "anthropic"
 history_enabled = true
 history_limit = 100
-render_markdown = false
+render_markdown = true # deprecated: ask renders by default unless --plain is set
 
 system_prompt = """
 You are a helpful shell assistant.

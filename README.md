@@ -50,6 +50,7 @@ termask switch groq               # Standard wechseln
 | Befehl | Beschreibung |
 |--------|-------------|
 | `termask ask "frage"` | Frage stellen (Standard-Provider) |
+| `termask ask --plain "frage"` | Rohe Ausgabe für Skripte/Pipes |
 | `termask ask -p openai "frage"` | Anderen Provider für diese Anfrage |
 | `termask ask --continue "folgefrage"` | Letzte Conversation fortsetzen |
 | `termask ask --template shell "frage"` | Prompt-Vorlage verwenden |
