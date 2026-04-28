@@ -12,10 +12,10 @@ install: build
 	@echo "✓ Installed to $(INSTALL)/$(BIN)"
 	@echo ""
 	@echo "Add the shell integration to your .zshrc:"
-	@echo "  termask shell --shell zsh >> ~/.zshrc && source ~/.zshrc"
+	@echo "  $(INSTALL)/$(BIN) shell --shell zsh >> ~/.zshrc && source ~/.zshrc"
 	@echo ""
 	@echo "Or for bash:"
-	@echo "  termask shell --shell bash >> ~/.bashrc && source ~/.bashrc"
+	@echo "  $(INSTALL)/$(BIN) shell --shell bash >> ~/.bashrc && source ~/.bashrc"
 
 shell-zsh:
 	@$(INSTALL)/$(BIN) shell --shell zsh

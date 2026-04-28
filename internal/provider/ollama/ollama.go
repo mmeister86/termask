@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/yourusername/termask/internal/provider"
 )
@@ -73,14 +74,32 @@ func (p *Provider) Ask(
 	systemPrompt, prompt string,
 	out io.Writer,
 ) error {
+	return p.AskMessages(ctx, cfg, systemPrompt, []provider.Message{{Role: "user", Content: prompt}}, out)
+}
+
+func (p *Provider) AskMessages(
+	ctx context.Context,
+	cfg provider.ProviderConfig,
+	systemPrompt string,
+	messages []provider.Message,
+	out io.Writer,
+) error {
 	model := cfg.Model
 	if model == "" {
 		return fmt.Errorf("ollama: no model set — run `termask providers add ollama --model llama3`")
 	}
 
+	var prompt strings.Builder
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			continue
+		}
+		fmt.Fprintf(&prompt, "%s: %s\n\n", msg.Role, msg.Content)
+	}
+
 	body, err := json.Marshal(generateRequest{
 		Model:  model,
-		Prompt: prompt,
+		Prompt: prompt.String(),
 		System: systemPrompt,
 		Stream: true,
 	})

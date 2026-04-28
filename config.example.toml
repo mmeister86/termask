@@ -2,6 +2,9 @@
 # Generiert mit `termask init` — manuell bearbeiten ist OK.
 
 default_provider = "anthropic"
+history_enabled = true
+history_limit = 100
+render_markdown = false
 
 system_prompt = """
 You are a helpful shell assistant.
@@ -31,3 +34,18 @@ model    = "openai/gpt-oss-120b"
 api_key  = "..."
 base_url = "https://api.together.xyz/v1/chat/completions"
 model    = "moonshotai/Kimi-K2.5"
+
+# Eigene OpenAI-kompatible Provider können ohne Codeänderung ergänzt werden.
+[providers.mistral]
+type     = "openai-compatible"
+api_key  = "..."
+base_url = "https://api.mistral.ai/v1/chat/completions"
+model    = "mistral-large-latest"
+
+[[providers.mistral.models]]
+id = "mistral-large-latest"
+description = "Mistral Large"
+
+[templates.shell-safe]
+description = "Shell command with safety notes"
+prompt = "Give a safe shell command first, then short safety notes.\n\nUser request: {{input}}"

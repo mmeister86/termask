@@ -31,7 +31,7 @@ git clone https://github.com/you/termask && cd termask
 make install          # → ~/.local/bin/termask
 
 termask init          # Anthropic API Key einrichten (Standard)
-termask shell --shell zsh >> ~/.zshrc && source ~/.zshrc
+~/.local/bin/termask shell --shell zsh >> ~/.zshrc && source ~/.zshrc
 ```
 
 ## Provider hinzufügen
@@ -51,9 +51,23 @@ termask switch groq               # Standard wechseln
 |--------|-------------|
 | `termask ask "frage"` | Frage stellen (Standard-Provider) |
 | `termask ask -p openai "frage"` | Anderen Provider für diese Anfrage |
+| `termask ask --continue "folgefrage"` | Letzte Conversation fortsetzen |
+| `termask ask --template shell "frage"` | Prompt-Vorlage verwenden |
+| `termask ask --file main.go "review"` | Datei explizit als Kontext anhängen |
+| `termask chat` | Multi-Turn Chat im Terminal |
+| `termask tui` | Optionale einfache Terminal UI |
+| `termask history list` | Gespeicherte Sessions anzeigen |
+| `termask history show <id>` | Session als Markdown anzeigen |
+| `termask history export <id> out.md` | Session als Markdown exportieren |
+| `termask templates` | Built-in und eigene Prompt-Vorlagen anzeigen |
+| `termask doctor` | Config und Setup prüfen |
+| `termask config get <key>` | Config-Wert lesen |
+| `termask config set <key> <value>` | Config-Wert setzen |
 | `termask switch <provider>` | Standard-Provider dauerhaft wechseln |
+| `termask switch --interactive` | Provider interaktiv auswählen |
 | `termask providers` | Alle Provider + Status anzeigen |
 | `termask models` | Verfügbare Modelle auflisten |
+| `termask models --select` | Modell interaktiv auswählen und speichern |
 | `termask models -p ollama` | Modelle eines bestimmten Providers |
 | `termask init` | Provider interaktiv einrichten |
 | `termask shell --shell zsh` | Shell-Plugin ausgeben |
@@ -94,3 +108,55 @@ model   = "mistral-large-latest"
 
 `~/.config/termask/config.toml` — Berechtigungen: `0600` (nur für den User lesbar).
 Alternativ: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY` als Umgebungsvariablen.
+
+## Conversation History
+
+Wenn `history_enabled = true` gesetzt ist, speichert termask Sessions lokal in
+`~/.local/share/termask/history.jsonl`. Das ermöglicht:
+
+```bash
+termask ask --continue "und als portable Variante?"
+termask chat
+termask history list
+termask history export <id> session.md
+```
+
+## Prompt-Vorlagen
+
+Built-ins:
+
+```bash
+termask templates
+termask templates show shell
+termask ask --template debug < error.log
+```
+
+Eigene Vorlagen können in der Config ergänzt werden:
+
+```toml
+[templates.shell-safe]
+description = "Shell command with safety notes"
+prompt = "Give a safe shell command first, then short safety notes.\n\nUser request: {{input}}"
+```
+
+## Project Context
+
+Dateien werden nur explizit angehängt, damit keine ungewollten Projektinhalte an Provider gesendet werden:
+
+```bash
+termask ask --file README.md --file cmd/termask/main.go "was würdest du verbessern?"
+```
+
+## Eigene OpenAI-kompatible Provider
+
+```toml
+[providers.mistral]
+type     = "openai-compatible"
+api_key  = "..."
+base_url = "https://api.mistral.ai/v1/chat/completions"
+model    = "mistral-large-latest"
+
+[[providers.mistral.models]]
+id = "mistral-large-latest"
+description = "Mistral Large"
+```

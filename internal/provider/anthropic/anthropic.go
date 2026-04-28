@@ -61,6 +61,16 @@ func (p *Provider) Ask(
 	systemPrompt, prompt string,
 	out io.Writer,
 ) error {
+	return p.AskMessages(ctx, cfg, systemPrompt, []provider.Message{{Role: "user", Content: prompt}}, out)
+}
+
+func (p *Provider) AskMessages(
+	ctx context.Context,
+	cfg provider.ProviderConfig,
+	systemPrompt string,
+	messages []provider.Message,
+	out io.Writer,
+) error {
 	if cfg.APIKey == "" {
 		return fmt.Errorf("anthropic: api_key is not set")
 	}
@@ -75,11 +85,18 @@ func (p *Provider) Ask(
 		baseURL = defaultBaseURL
 	}
 
+	apiMessages := make([]reqMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			continue
+		}
+		apiMessages = append(apiMessages, reqMessage{Role: msg.Role, Content: msg.Content})
+	}
 	body, err := json.Marshal(apiRequest{
 		Model:     model,
 		MaxTokens: 2048,
 		System:    systemPrompt,
-		Messages:  []reqMessage{{Role: "user", Content: prompt}},
+		Messages:  apiMessages,
 		Stream:    true,
 	})
 	if err != nil {

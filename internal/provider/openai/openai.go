@@ -86,6 +86,21 @@ func (p *Provider) Ask(
 	systemPrompt, prompt string,
 	out io.Writer,
 ) error {
+	messages := []provider.Message{}
+	if systemPrompt != "" {
+		messages = append(messages, provider.Message{Role: "system", Content: systemPrompt})
+	}
+	messages = append(messages, provider.Message{Role: "user", Content: prompt})
+	return p.AskMessages(ctx, cfg, "", messages, out)
+}
+
+func (p *Provider) AskMessages(
+	ctx context.Context,
+	cfg provider.ProviderConfig,
+	systemPrompt string,
+	messages []provider.Message,
+	out io.Writer,
+) error {
 	if cfg.APIKey == "" {
 		return fmt.Errorf("%s: api_key is not set", p.name)
 	}
@@ -100,15 +115,17 @@ func (p *Provider) Ask(
 		baseURL = p.defaultBaseURL
 	}
 
-	messages := []chatMessage{}
+	apiMessages := []chatMessage{}
 	if systemPrompt != "" {
-		messages = append(messages, chatMessage{Role: "system", Content: systemPrompt})
+		apiMessages = append(apiMessages, chatMessage{Role: "system", Content: systemPrompt})
 	}
-	messages = append(messages, chatMessage{Role: "user", Content: prompt})
+	for _, msg := range messages {
+		apiMessages = append(apiMessages, chatMessage{Role: msg.Role, Content: msg.Content})
+	}
 
 	body, err := json.Marshal(chatRequest{
 		Model:    model,
-		Messages: messages,
+		Messages: apiMessages,
 		Stream:   true,
 	})
 	if err != nil {

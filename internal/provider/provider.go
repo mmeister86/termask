@@ -10,15 +10,17 @@ import (
 
 // ProviderConfig holds the per-provider settings from config.toml.
 type ProviderConfig struct {
-	APIKey  string `toml:"api_key"`
-	BaseURL string `toml:"base_url"` // optional override (OpenAI-compatible)
-	Model   string `toml:"model"`
+	APIKey  string  `toml:"api_key"`
+	BaseURL string  `toml:"base_url"` // optional override (OpenAI-compatible)
+	Model   string  `toml:"model"`
+	Type    string  `toml:"type"`   // optional: openai-compatible
+	Models  []Model `toml:"models"` // optional curated list for custom providers
 }
 
 // Model describes a single model offered by a provider.
 type Model struct {
-	ID          string
-	Description string
+	ID          string `toml:"id"`
+	Description string `toml:"description"`
 }
 
 // Provider is the interface every backend must satisfy.
@@ -33,6 +35,16 @@ type Provider interface {
 
 	// Name returns the canonical provider identifier, e.g. "anthropic".
 	Name() string
+}
+
+type Message struct {
+	Role    string
+	Content string
+}
+
+type ConversationProvider interface {
+	Provider
+	AskMessages(ctx context.Context, cfg ProviderConfig, systemPrompt string, messages []Message, out io.Writer) error
 }
 
 // Registry holds all registered providers.

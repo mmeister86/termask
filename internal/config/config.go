@@ -14,16 +14,29 @@ import (
 type Config struct {
 	DefaultProvider string                             `toml:"default_provider"`
 	SystemPrompt    string                             `toml:"system_prompt"`
+	HistoryEnabled  bool                               `toml:"history_enabled"`
+	HistoryLimit    int                                `toml:"history_limit"`
+	RenderMarkdown  bool                               `toml:"render_markdown"`
+	Templates       map[string]PromptTemplate          `toml:"templates"`
 	Providers       map[string]provider.ProviderConfig `toml:"providers"`
+}
+
+type PromptTemplate struct {
+	Description string `toml:"description"`
+	Prompt      string `toml:"prompt"`
 }
 
 func Default() Config {
 	return Config{
 		DefaultProvider: "anthropic",
+		HistoryEnabled:  true,
+		HistoryLimit:    100,
+		RenderMarkdown:  false,
 		SystemPrompt: `You are a helpful shell assistant.
 Answer concisely and always prefer practical shell commands, scripts, and one-liners.
 When writing scripts, use best practices: error handling, comments, portability.
 Format code blocks with triple backticks and the language name.`,
+		Templates: map[string]PromptTemplate{},
 		Providers: map[string]provider.ProviderConfig{
 			"anthropic": {Model: "claude-sonnet-4-6"},
 			"openai":    {Model: "gpt-5.4-mini"},
