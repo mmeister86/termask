@@ -55,6 +55,7 @@ termask switch groq               # Standard wechseln
 | `termask ask --continue "folgefrage"` | Letzte Conversation fortsetzen |
 | `termask ask --template shell "frage"` | Prompt-Vorlage verwenden |
 | `termask ask --file main.go "review"` | Datei explizit als Kontext anhängen |
+| `termask agent "ziel"` | Read-only Agent mit lokalen Projekt-Tools |
 | `termask chat` | Multi-Turn Chat im Terminal |
 | `termask tui` | Optionale einfache Terminal UI |
 | `termask history list` | Gespeicherte Sessions anzeigen |
@@ -147,6 +148,23 @@ Dateien werden nur explizit angehängt, damit keine ungewollten Projektinhalte a
 ```bash
 termask ask --file README.md --file cmd/termask/main.go "was würdest du verbessern?"
 ```
+
+## Read-only Agent
+
+`termask agent` startet im Terminal eine interaktive Agent-Session. Du kannst direkt
+ein erstes Ziel mitgeben und danach Folgefragen stellen. Der Agent darf Projektkontext
+lesen, Text suchen, Git-Status/Diffs ansehen und allowlistete Go-Checks ausführen.
+Er schreibt keine Dateien und führt keine beliebigen Shell-Kommandos aus.
+Während der Session zeigt termask Denk-/Tool-Status live an und streamt die finale
+Antwort als Text.
+
+```bash
+termask agent "finde die wichtigsten Tests für history"
+termask agent --max-steps 4 --file README.md "welche CLI-Funktionen fehlen in der Doku?"
+termask agent --plain "fasse das Projekt kurz zusammen"
+```
+
+Für Skripte bleibt `--plain` ein One-Shot-Modus ohne Agent-Prompt.
 
 ## Eigene OpenAI-kompatible Provider
 

@@ -8,7 +8,8 @@ build:
 
 install: build
 	mkdir -p $(INSTALL)
-	cp $(BIN) $(INSTALL)/$(BIN)
+	cp $(BIN) $(INSTALL)/.$(BIN).tmp
+	mv -f $(INSTALL)/.$(BIN).tmp $(INSTALL)/$(BIN)
 	@echo "✓ Installed to $(INSTALL)/$(BIN)"
 	@echo ""
 	@echo "Add the shell integration to your .zshrc:"
