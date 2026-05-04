@@ -501,11 +501,14 @@ func chatCmd() *cobra.Command {
 					ProviderName: providerName,
 					Query:        query,
 					History:      prior,
+					Out:          os.Stdout,
 				})
 				if err != nil {
 					return err
 				}
-				fmt.Print(markdown.Render(resp.Text))
+				if !strings.HasSuffix(resp.Text, "\n") {
+					fmt.Println()
+				}
 				session.Provider = resp.ProviderName
 				session.Model = resp.Model
 				session.AddUser(query)

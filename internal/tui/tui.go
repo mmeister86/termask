@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"image/color"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -121,6 +123,14 @@ type chatDoneMsg struct {
 	Err      error
 }
 
+type chatStreamStartedMsg struct {
+	Events <-chan tea.Msg
+}
+
+type chatDeltaMsg struct {
+	Text string
+}
+
 type agentStreamStartedMsg struct {
 	Events <-chan tea.Msg
 }
@@ -134,6 +144,19 @@ type agentDoneMsg struct {
 	Response agent.Response
 	Err      error
 }
+
+type teaMsgWriter struct {
+	ch chan<- tea.Msg
+}
+
+func (w teaMsgWriter) Write(p []byte) (int, error) {
+	if len(p) > 0 {
+		w.ch <- chatDeltaMsg{Text: string(p)}
+	}
+	return len(p), nil
+}
+
+var _ io.Writer = teaMsgWriter{}
 
 func Run(ctx context.Context, cfg config.Config) error {
 	m, err := newModel(ctx, cfg, modelOptions{})
@@ -163,6 +186,7 @@ func newModel(ctx context.Context, cfg config.Config, opts modelOptions) (model,
 	ta.SetWidth(72)
 	ta.SetHeight(3)
 	ta.Focus()
+	ta.SetStyles(textareaStyles())
 
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(accentStyle))
 	chat := opts.chatRunner
@@ -224,12 +248,23 @@ func (m model) updateMessage(msg tea.Msg) (model, command) {
 		m.resizeInput()
 		return m, nil
 	case tea.KeyPressMsg:
-		return m.handleKey(msg.Keystroke())
+		if m.paletteOpen || isShortcutKey(msg.Keystroke()) {
+			return m.handleKey(msg.Keystroke())
+		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		if m.busy {
 			return m, cmd
+		}
+		return m, nil
+	case chatStreamStartedMsg:
+		m.stream = msg.Events
+		return m, waitForStream(msg.Events)
+	case chatDeltaMsg:
+		m.appendAssistantDelta(msg.Text)
+		if m.stream != nil {
+			return m, waitForStream(m.stream)
 		}
 		return m, nil
 	case chatDoneMsg:
@@ -335,12 +370,18 @@ func (m model) submit() (model, command) {
 func (m model) runChat(query string) command {
 	historyMessages := sessionMessages(m.session)
 	return func() tea.Msg {
-		resp, err := m.chatRunner.RunChat(m.ctx, m.cfg, ask.Request{
-			ProviderName: m.providerName,
-			Query:        query,
-			History:      historyMessages,
-		})
-		return chatDoneMsg{Query: query, Response: resp, Err: err}
+		ch := make(chan tea.Msg, 32)
+		go func() {
+			resp, err := m.chatRunner.RunChat(m.ctx, m.cfg, ask.Request{
+				ProviderName: m.providerName,
+				Query:        query,
+				History:      historyMessages,
+				Out:          teaMsgWriter{ch: ch},
+			})
+			ch <- chatDoneMsg{Query: query, Response: resp, Err: err}
+			close(ch)
+		}()
+		return chatStreamStartedMsg{Events: ch}
 	}
 }
 
@@ -375,6 +416,7 @@ func waitForStream(ch <-chan tea.Msg) tea.Cmd {
 
 func (m model) applyChatDone(msg chatDoneMsg) model {
 	m.busy = false
+	m.stream = nil
 	if msg.Err != nil {
 		m.errText = msg.Err.Error()
 		m.status = "Chat error"
@@ -392,7 +434,7 @@ func (m model) applyChatDone(msg chatDoneMsg) model {
 			m.transcript = append(m.transcript, transcriptItem{Role: "error", Text: "history: " + err.Error()})
 		}
 	}
-	m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: msg.Response.Text})
+	m.ensureAssistantText(msg.Response.Text)
 	m.status = "Ready"
 	return m
 }
@@ -445,6 +487,14 @@ func (m model) applyAgentDone(msg agentDoneMsg) model {
 func (m *model) appendAssistantDelta(text string) {
 	if len(m.transcript) > 0 && m.transcript[len(m.transcript)-1].Role == "assistant" {
 		m.transcript[len(m.transcript)-1].Text += text
+		return
+	}
+	m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: text})
+}
+
+func (m *model) ensureAssistantText(text string) {
+	if len(m.transcript) > 0 && m.transcript[len(m.transcript)-1].Role == "assistant" {
+		m.transcript[len(m.transcript)-1].Text = text
 		return
 	}
 	m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: text})
@@ -578,6 +628,12 @@ func (m *model) resizeInput() {
 	m.input.SetHeight(3)
 }
 
+func (m *model) resizeInputFor(width int) {
+	inputWidth := clamp(width-7, 18, 90)
+	m.input.SetWidth(inputWidth)
+	m.input.SetHeight(3)
+}
+
 func (m *model) setInputValue(value string) {
 	m.input.SetValue(value)
 }
@@ -590,33 +646,38 @@ func (m model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.WindowTitle = "termask tui"
+	v.BackgroundColor = terminalBackgroundColor
+	v.ForegroundColor = terminalForegroundColor
 	return v
 }
 
 func (m model) render() string {
-	width := clamp(m.width, 40, 140)
-	height := clamp(m.height, 12, 80)
-	contentWidth := max(34, width-6)
-	contentHeight := max(10, height-2)
-	bodyHeight := max(3, contentHeight-9)
+	width := max(24, m.width)
+	height := max(10, m.height)
+	contentWidth := responsiveContentWidth(width)
 	var body string
+	inputLines := splitLines(m.renderInput(contentWidth))
+	footer := m.renderFooter(contentWidth)
+	bodyHeight := max(1, height-len(inputLines)-1)
 	if len(m.transcript) == 0 {
 		body = m.renderIdle(contentWidth, bodyHeight)
 	} else {
 		body = m.renderTranscript(contentWidth, bodyHeight)
 	}
-	input := m.renderInput(contentWidth)
-	footer := m.renderFooter(contentWidth)
-	parts := []string{body, input, footer}
+	lines := fitLines(splitLines(body), bodyHeight)
+	lines = append(lines, inputLines...)
+	lines = append(lines, footer)
 	if m.paletteOpen {
-		parts = append([]string{m.renderPalette(contentWidth)}, parts...)
+		palette := splitLines(m.renderPalette(contentWidth))
+		lines = append(palette, lines...)
 	}
-	return screenStyle.Width(contentWidth).Height(contentHeight).Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	lines = fitLines(lines, height)
+	return screenStyle.Render(joinCanvas(lines, width, contentWidth))
 }
 
 func (m model) renderIdle(width, height int) string {
-	logo := logoStyle.Render(compactLogo(width))
-	sub := dimStyle.Render(`Ask anything... "What is the tech stack of this project?"`)
+	logo := logoStyle.Render(compactLogo(width, height))
+	sub := dimStyle.Render(wrapPlain(`Ask anything... "What is the tech stack of this project?"`, max(18, width-4)))
 	content := lipgloss.JoinVertical(lipgloss.Center, logo, "", sub)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
@@ -643,22 +704,34 @@ func (m model) renderTranscript(width, height int) string {
 }
 
 func (m model) renderInput(width int) string {
-	inner := clamp(width-8, 30, 104)
-	m.resizeInput()
+	inner := clamp(width, 24, 104)
+	m.resizeInputFor(inner)
 	meta := fmt.Sprintf("%s  %s / %s", accentStyle.Render(m.mode.String()), m.providerName, m.modelName)
-	hints := dimStyle.Render("tab switch mode   ctrl+p commands   alt+enter newline")
-	box := inputStyle.Width(inner).Render(lipgloss.JoinVertical(lipgloss.Left, m.input.View(), "", meta))
-	return lipgloss.Place(width, lipgloss.Height(box)+1, lipgloss.Center, lipgloss.Top, lipgloss.JoinVertical(lipgloss.Right, box, hints))
+	hints := dimStyle.Render(hintText(inner))
+	boxContentWidth := max(12, inner-5)
+	box := inputStyle.Width(boxContentWidth).Render(lipgloss.JoinVertical(lipgloss.Left, m.input.View(), "", meta))
+	return lipgloss.JoinVertical(lipgloss.Right, box, hints)
 }
 
 func (m model) renderFooter(width int) string {
-	path := compactPath(m.workspace, max(18, width-42))
+	pathLimit := max(10, width-24)
+	if width > 70 {
+		pathLimit = max(18, width-42)
+	}
+	path := compactPath(m.workspace, pathLimit)
 	left := dimStyle.Render(path + branchSuffix(m.gitBranch))
 	mid := statusStyle.Render("  " + m.status + "  ")
-	right := dimStyle.Render(m.version)
-	line := lipgloss.JoinHorizontal(lipgloss.Top, left, mid)
-	padding := max(1, width-lipgloss.Width(stripStyle(line))-lipgloss.Width(stripStyle(right))-2)
-	return left + strings.Repeat(" ", padding) + mid + " " + right
+	right := ""
+	if width > 58 {
+		right = dimStyle.Render(m.version)
+	}
+	used := lipgloss.Width(left) + lipgloss.Width(mid) + lipgloss.Width(right)
+	if used > width {
+		left = dimStyle.Render(compactPath(m.workspace, max(6, width-lipgloss.Width(mid)-2)))
+		used = lipgloss.Width(left) + lipgloss.Width(mid) + lipgloss.Width(right)
+	}
+	padding := max(1, width-used)
+	return left + strings.Repeat(" ", padding) + mid + right
 }
 
 func (m model) renderPalette(width int) string {
@@ -674,8 +747,8 @@ func (m model) renderPalette(width int) string {
 	return paletteStyle.Width(clamp(width-12, 30, 72)).Render(strings.Join(lines, "\n"))
 }
 
-func compactLogo(width int) string {
-	if width < 58 {
+func compactLogo(width, height int) string {
+	if width < 92 || height < 13 {
 		return "termask"
 	}
 	return strings.Join([]string{
@@ -685,6 +758,95 @@ func compactLogo(width int) string {
 		"     ██     ██        ██   ██  ██  ██  ██  ██   ██       ██  ██  ██ ",
 		"     ██     ████████  ██   ██  ██      ██  ██   ██  ███████  ██   ██",
 	}, "\n")
+}
+
+func responsiveContentWidth(width int) int {
+	if width < 52 {
+		return max(20, width-4)
+	}
+	if width < 100 {
+		return width - 8
+	}
+	return clamp(width-16, 84, 132)
+}
+
+func hintText(width int) string {
+	if width < 34 {
+		return "tab mode  ctrl+p  alt+enter"
+	}
+	if width < 70 {
+		return "tab switch mode   ctrl+p commands"
+	}
+	return "tab switch mode   ctrl+p commands   alt+enter newline"
+}
+
+func isShortcutKey(key string) bool {
+	switch key {
+	case "ctrl+c", "esc", "tab", "ctrl+p", "alt+enter", "ctrl+j", "enter":
+		return true
+	default:
+		return false
+	}
+}
+
+func textareaStyles() textarea.Styles {
+	styles := textarea.DefaultDarkStyles()
+	base := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#cdd4f4")).
+		Background(inputBackgroundColor)
+	placeholder := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#777b92")).
+		Background(inputBackgroundColor)
+	prompt := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#caa7ff")).
+		Background(inputBackgroundColor)
+	styles.Focused.Base = base
+	styles.Focused.Text = base
+	styles.Focused.CursorLine = base
+	styles.Focused.EndOfBuffer = base
+	styles.Focused.Placeholder = placeholder
+	styles.Focused.Prompt = prompt
+	styles.Blurred.Base = base
+	styles.Blurred.Text = base
+	styles.Blurred.CursorLine = base
+	styles.Blurred.EndOfBuffer = base
+	styles.Blurred.Placeholder = placeholder
+	styles.Blurred.Prompt = prompt
+	styles.Cursor.Color = lipgloss.Color("#d8b4fe")
+	return styles
+}
+
+func splitLines(s string) []string {
+	if s == "" {
+		return []string{""}
+	}
+	return strings.Split(strings.TrimRight(s, "\n"), "\n")
+}
+
+func fitLines(lines []string, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	out := append([]string{}, lines...)
+	if len(out) > height {
+		return out[len(out)-height:]
+	}
+	for len(out) < height {
+		out = append(out, "")
+	}
+	return out
+}
+
+func joinCanvas(lines []string, width, contentWidth int) string {
+	leftPad := max(0, (width-contentWidth)/2)
+	rightPad := max(0, width-contentWidth-leftPad)
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		lineWidth := lipgloss.Width(line)
+		contentPad := max(0, contentWidth-lineWidth)
+		out = append(out, strings.Repeat(" ", leftPad)+line+strings.Repeat(" ", contentPad+rightPad))
+	}
+	return strings.Join(out, "\n")
 }
 
 func roleStyle(role string) lipgloss.Style {
@@ -827,16 +989,18 @@ func max(a, b int) int {
 }
 
 var (
-	screenStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#c9d1f2")).
-			Background(lipgloss.Color("#27283c")).
-			Padding(1, 3)
+	terminalBackgroundColor = color.RGBA{R: 0x27, G: 0x28, B: 0x3c, A: 0xff}
+	terminalForegroundColor = color.RGBA{R: 0xc9, G: 0xd1, B: 0xf2, A: 0xff}
+	inputBackgroundColor    = lipgloss.Color("#111321")
+	screenStyle             = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#c9d1f2")).
+				Background(lipgloss.Color("#27283c"))
 	logoStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#d8def8")).
 			Bold(true)
 	inputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#cdd4f4")).
-			Background(lipgloss.Color("#111321")).
+			Background(inputBackgroundColor).
 			Border(lipgloss.NormalBorder(), false, false, false, true).
 			BorderForeground(lipgloss.Color("#caa7ff")).
 			Padding(1, 2)

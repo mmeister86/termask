@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/yourusername/termask/internal/agent"
 	"github.com/yourusername/termask/internal/ask"
 	"github.com/yourusername/termask/internal/config"
@@ -54,13 +56,62 @@ func TestModelSendsChatPromptThroughRunner(t *testing.T) {
 		t.Fatal("model should be busy while chat command runs")
 	}
 
-	msg := cmd()
-	m, _ = m.updateMessage(msg)
+	m, _ = runCommandToCompletion(t, m, cmd)
 	if m.busy {
 		t.Fatal("model should no longer be busy after chat result")
 	}
 	if got := transcriptText(m); !strings.Contains(got, "hello") || !strings.Contains(got, "hi back") {
 		t.Fatalf("transcript = %q, want user and assistant text", got)
+	}
+}
+
+func TestModelStreamsChatDeltasBeforeCompletion(t *testing.T) {
+	m := newTestModel(t)
+	release := make(chan struct{})
+	m.chatRunner = fakeChatRunner(func(req ask.Request) (ask.Response, error) {
+		if req.Out == nil {
+			t.Fatal("chat request should provide a streaming writer")
+		}
+		if _, err := req.Out.Write([]byte("hel")); err != nil {
+			t.Fatalf("write delta: %v", err)
+		}
+		<-release
+		if _, err := req.Out.Write([]byte("lo")); err != nil {
+			t.Fatalf("write delta: %v", err)
+		}
+		return ask.Response{ProviderName: "anthropic", Model: "claude-test", Text: "hello"}, nil
+	})
+	m.setInputValue("stream please")
+
+	var cmd command
+	m, cmd = m.handleKey("enter")
+	start := cmd()
+	m, cmd = m.updateMessage(start)
+	if cmd == nil {
+		t.Fatal("stream start should wait for chat events")
+	}
+	m, cmd = m.updateMessage(cmd())
+	if got := transcriptText(m); !strings.Contains(got, "assistant:hel") {
+		t.Fatalf("transcript after first delta = %q, want partial assistant text", got)
+	}
+	if !m.busy {
+		t.Fatal("model should stay busy until chat completion")
+	}
+
+	close(release)
+	for m.busy {
+		if cmd == nil {
+			t.Fatal("expected stream wait command while chat is busy")
+		}
+		var msg tea.Msg
+		msg = cmd()
+		m, cmd = m.updateMessage(msg)
+	}
+	if got := transcriptText(m); !strings.Contains(got, "assistant:hello") {
+		t.Fatalf("transcript after completion = %q, want full streamed assistant text", got)
+	}
+	if len(m.session.Messages) != 2 || m.session.Messages[1].Content != "hello" {
+		t.Fatalf("session messages = %+v, want saved full assistant response", m.session.Messages)
 	}
 }
 
@@ -110,6 +161,17 @@ func TestModelInsertsMultilineWithAltEnterAndCtrlJ(t *testing.T) {
 	}
 }
 
+func TestModelPassesPrintableKeysToTextarea(t *testing.T) {
+	m := newTestModel(t)
+
+	m, _ = m.updateMessage(tea.KeyPressMsg(tea.Key{Text: "a", Code: 'a'}))
+	m, _ = m.updateMessage(tea.KeyPressMsg(tea.Key{Text: "b", Code: 'b'}))
+
+	if got := m.inputValue(); got != "ab" {
+		t.Fatalf("input value = %q, want typed characters", got)
+	}
+}
+
 func TestModelAppliesAgentStreamEvents(t *testing.T) {
 	m := newTestModel(t)
 	m.mode = modeAgent
@@ -152,6 +214,80 @@ func TestViewRendersResponsiveTermaskShell(t *testing.T) {
 	}
 }
 
+func TestRenderFillsWideTerminalViewport(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 180
+	m.height = 36
+
+	out := stripANSI(m.render())
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("rendered height = %d, want %d\n%s", len(lines), m.height, out)
+	}
+	for i, line := range lines {
+		if lipgloss.Width(line) != m.width {
+			t.Fatalf("line %d width = %d, want %d: %q", i, lipgloss.Width(line), m.width, line)
+		}
+	}
+	if longestContentLine(out) > 132 {
+		t.Fatalf("content stretches too wide: longest visible line = %d\n%s", longestContentLine(out), out)
+	}
+}
+
+func TestRenderUsesCompactIdleLayoutOnShortTerminals(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 92
+	m.height = 18
+
+	out := stripANSI(m.render())
+	if strings.Contains(out, "████") {
+		t.Fatalf("short terminal should use compact logo:\n%s", out)
+	}
+	for _, want := range []string{"termask", "Ask anything", "tab switch mode", "/tmp/termask-test"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("short render missing %q:\n%s", want, out)
+		}
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("rendered height = %d, want %d\n%s", len(lines), m.height, out)
+	}
+}
+
+func TestRenderKeepsNarrowLayoutInsideViewport(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 42
+	m.height = 16
+
+	out := stripANSI(m.render())
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != m.height {
+		t.Fatalf("rendered height = %d, want %d\n%s", len(lines), m.height, out)
+	}
+	for i, line := range lines {
+		if lipgloss.Width(line) != m.width {
+			t.Fatalf("line %d width = %d, want %d: %q\n%s", i, lipgloss.Width(line), m.width, line, out)
+		}
+	}
+	for _, want := range []string{"termask", "Chat", "ctrl+p"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("narrow render missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestViewSetsTerminalBackgroundColor(t *testing.T) {
+	m := newTestModel(t)
+
+	view := m.View()
+	if view.BackgroundColor == nil {
+		t.Fatal("view should set a terminal background color to avoid default-background gaps")
+	}
+	if view.ForegroundColor == nil {
+		t.Fatal("view should set a terminal foreground color for consistent reset behavior")
+	}
+}
+
 func TestChatErrorsReturnToInput(t *testing.T) {
 	m := newTestModel(t)
 	m.chatRunner = fakeChatRunner(func(req ask.Request) (ask.Response, error) {
@@ -161,7 +297,7 @@ func TestChatErrorsReturnToInput(t *testing.T) {
 
 	var cmd command
 	m, cmd = m.handleKey("enter")
-	m, _ = m.updateMessage(cmd())
+	m, _ = runCommandToCompletion(t, m, cmd)
 
 	if m.busy {
 		t.Fatal("model should not remain busy after chat error")
@@ -220,7 +356,30 @@ func transcriptText(m model) string {
 	return out.String()
 }
 
+func runCommandToCompletion(t *testing.T, m model, cmd command) (model, command) {
+	t.Helper()
+	for cmd != nil {
+		msg := cmd()
+		m, cmd = m.updateMessage(msg)
+		if !m.busy {
+			return m, cmd
+		}
+	}
+	return m, cmd
+}
+
 func stripANSI(s string) string {
 	re := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 	return re.ReplaceAllString(s, "")
+}
+
+func longestContentLine(s string) int {
+	longest := 0
+	for _, line := range strings.Split(stripANSI(s), "\n") {
+		visible := lipgloss.Width(strings.TrimSpace(line))
+		if visible > longest {
+			longest = visible
+		}
+	}
+	return longest
 }
