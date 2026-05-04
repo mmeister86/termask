@@ -37,6 +37,26 @@ func TestModelSwitchesModesAndCommandPalette(t *testing.T) {
 	}
 }
 
+func TestUpdateOpensCommandPaletteFromCtrlPKeyEvent(t *testing.T) {
+	tests := []struct {
+		name string
+		key  tea.Key
+	}{
+		{name: "modified p", key: tea.Key{Code: 'p', Mod: tea.ModCtrl}},
+		{name: "modified shifted p", key: tea.Key{Code: 'p', ShiftedCode: 'P', Mod: tea.ModCtrl}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newTestModel(t)
+			m, _ = m.updateMessage(tea.KeyPressMsg(tt.key))
+			if !m.paletteOpen {
+				t.Fatal("ctrl+p key event should open the command palette")
+			}
+		})
+	}
+}
+
 func TestModelSendsChatPromptThroughRunner(t *testing.T) {
 	m := newTestModel(t)
 	m.chatRunner = fakeChatRunner(func(req ask.Request) (ask.Response, error) {
@@ -234,6 +254,107 @@ func TestRenderFillsWideTerminalViewport(t *testing.T) {
 	}
 }
 
+func TestRenderDoesNotResetStyledLinesBeforeTrailingPadding(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 180
+	m.height = 36
+
+	view := m.render()
+	for i, line := range strings.Split(strings.TrimRight(view, "\n"), "\n") {
+		if hasUnstyledTrailingPadding(line) {
+			t.Fatalf("line %d resets colors before trailing padding, causing terminal-background gaps: %q", i, line)
+		}
+	}
+}
+
+func TestRenderInputCentersHintsUnderInputBox(t *testing.T) {
+	m := newTestModel(t)
+
+	input := stripANSI(m.renderInput(104))
+	for _, line := range strings.Split(input, "\n") {
+		if !strings.Contains(line, "ctrl+p commands") {
+			continue
+		}
+		leading := len(line) - len(strings.TrimLeft(line, " "))
+		trailing := len(line) - len(strings.TrimRight(line, " "))
+		if diff := abs(leading - trailing); diff > 1 {
+			t.Fatalf("hint line should be centered under input box, leading=%d trailing=%d: %q", leading, trailing, line)
+		}
+		return
+	}
+	t.Fatalf("input hints missing from render:\n%s", input)
+}
+
+func TestTranscriptCanScrollBackThroughOlderOutput(t *testing.T) {
+	m := newTestModel(t)
+	for i := 0; i < 24; i++ {
+		m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: "message " + twoDigits(i)})
+	}
+
+	bottom := stripANSI(m.renderTranscript(80, 6))
+	if strings.Contains(bottom, "message 00") {
+		t.Fatalf("bottom transcript should start near the newest output:\n%s", bottom)
+	}
+
+	m, _ = m.updateMessage(tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp}))
+	scrolled := stripANSI(m.renderTranscript(80, 6))
+	if !strings.Contains(scrolled, "message 09") {
+		t.Fatalf("page up should reveal older transcript output:\n%s", scrolled)
+	}
+}
+
+func TestTranscriptMouseWheelScrollsOutput(t *testing.T) {
+	m := newTestModel(t)
+	for i := 0; i < 24; i++ {
+		m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: "message " + twoDigits(i)})
+	}
+
+	m, _ = m.updateMessage(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelUp}))
+	scrolled := stripANSI(m.renderTranscript(80, 6))
+	if !strings.Contains(scrolled, "message 15") {
+		t.Fatalf("mouse wheel up should reveal older transcript output:\n%s", scrolled)
+	}
+
+	m, _ = m.updateMessage(tea.MouseWheelMsg(tea.Mouse{Button: tea.MouseWheelDown}))
+	bottom := stripANSI(m.renderTranscript(80, 6))
+	if !strings.Contains(bottom, "message 23") {
+		t.Fatalf("mouse wheel down should return toward newest transcript output:\n%s", bottom)
+	}
+}
+
+func TestTranscriptUsesCompactMessageSpacing(t *testing.T) {
+	m := newTestModel(t)
+	m.transcript = []transcriptItem{
+		{Role: "user", Text: "first"},
+		{Role: "assistant", Text: "second"},
+		{Role: "user", Text: "third"},
+	}
+
+	out := stripANSI(m.renderTranscript(80, 8))
+	if hasBlankVisualLineBetweenContent(out) {
+		t.Fatalf("transcript should not insert blank lines between short messages:\n%s", out)
+	}
+}
+
+func TestTranscriptKeepsMarkdownCodeBlocksNearIntroText(t *testing.T) {
+	m := newTestModel(t)
+	m.transcript = []transcriptItem{
+		{Role: "user", Text: "Wie wird das Wetter in Crimmitschau"},
+		{Role: "assistant", Text: "Ich kann das aktuelle Wetter nicht direkt abrufen.\n\nz. B.:\n\n```bash\ncurl wttr.in/Crimmitschau\n```"},
+	}
+
+	out := stripANSI(m.renderTranscript(100, 18))
+	lines := strings.Split(out, "\n")
+	introLine := lineIndexContaining(lines, "z. B.:")
+	codeLine := lineIndexContaining(lines, "curl wttr.in/Crimmitschau")
+	if introLine < 0 || codeLine < 0 {
+		t.Fatalf("rendered transcript missing intro/code lines:\n%s", out)
+	}
+	if gap := codeLine - introLine; gap > 3 {
+		t.Fatalf("code block is too far from intro, gap=%d:\n%s", gap, out)
+	}
+}
+
 func TestRenderUsesCompactIdleLayoutOnShortTerminals(t *testing.T) {
 	m := newTestModel(t)
 	m.width = 92
@@ -285,6 +406,9 @@ func TestViewSetsTerminalBackgroundColor(t *testing.T) {
 	}
 	if view.ForegroundColor == nil {
 		t.Fatal("view should set a terminal foreground color for consistent reset behavior")
+	}
+	if view.MouseMode != tea.MouseModeCellMotion {
+		t.Fatal("view should enable mouse wheel events for transcript scrolling")
 	}
 }
 
@@ -369,7 +493,7 @@ func runCommandToCompletion(t *testing.T, m model, cmd command) (model, command)
 }
 
 func stripANSI(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+	re := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]?`)
 	return re.ReplaceAllString(s, "")
 }
 
@@ -382,4 +506,50 @@ func longestContentLine(s string) int {
 		}
 	}
 	return longest
+}
+
+func hasUnstyledTrailingPadding(line string) bool {
+	re := regexp.MustCompile(`\x1b\[(?:0)?m {2,}(?:\x1b\[(?:0)?m)?$`)
+	return re.MatchString(line)
+}
+
+func hasBlankVisualLineBetweenContent(out string) bool {
+	sawContent := false
+	sawBlankAfterContent := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "" {
+			if sawContent {
+				sawBlankAfterContent = true
+			}
+			continue
+		}
+		if sawBlankAfterContent {
+			return true
+		}
+		sawContent = true
+	}
+	return false
+}
+
+func lineIndexContaining(lines []string, needle string) int {
+	for i, line := range lines {
+		if strings.Contains(line, needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func twoDigits(v int) string {
+	if v < 10 {
+		return "0" + string(rune('0'+v))
+	}
+	return string(rune('0'+v/10)) + string(rune('0'+v%10))
 }

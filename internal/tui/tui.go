@@ -19,7 +19,6 @@ import (
 	"github.com/yourusername/termask/internal/ask"
 	"github.com/yourusername/termask/internal/config"
 	"github.com/yourusername/termask/internal/history"
-	"github.com/yourusername/termask/internal/markdown"
 	"github.com/yourusername/termask/internal/provider"
 )
 
@@ -102,12 +101,13 @@ type model struct {
 	input  textarea.Model
 	spin   spinner.Model
 
-	busy          bool
-	status        string
-	errText       string
-	paletteOpen   bool
-	paletteCursor int
-	transcript    []transcriptItem
+	busy             bool
+	status           string
+	errText          string
+	paletteOpen      bool
+	paletteCursor    int
+	transcriptScroll int
+	transcript       []transcriptItem
 
 	chatRunner  chatRunner
 	agentRunner agentRunner
@@ -248,9 +248,18 @@ func (m model) updateMessage(msg tea.Msg) (model, command) {
 		m.resizeInput()
 		return m, nil
 	case tea.KeyPressMsg:
-		if m.paletteOpen || isShortcutKey(msg.Keystroke()) {
-			return m.handleKey(msg.Keystroke())
+		key := normalizedKey(msg)
+		if m.paletteOpen || isShortcutKey(key) {
+			return m.handleKey(key)
 		}
+	case tea.MouseWheelMsg:
+		switch msg.Mouse().Button {
+		case tea.MouseWheelUp:
+			m.scrollTranscript(scrollStep())
+		case tea.MouseWheelDown:
+			m.scrollTranscript(-scrollStep())
+		}
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
@@ -308,6 +317,18 @@ func (m model) handleKey(key string) (model, command) {
 		m.paletteOpen = true
 		m.paletteCursor = 0
 		return m, nil
+	case "pgup":
+		m.scrollTranscript(m.transcriptPageSize())
+		return m, nil
+	case "pgdown":
+		m.scrollTranscript(-m.transcriptPageSize())
+		return m, nil
+	case "home":
+		m.scrollTranscript(m.maxTranscriptScroll())
+		return m, nil
+	case "end":
+		m.transcriptScroll = 0
+		return m, nil
 	case "alt+enter", "ctrl+j":
 		m.input.InsertString("\n")
 		return m, nil
@@ -357,6 +378,7 @@ func (m model) submit() (model, command) {
 		return m.runCommand(query)
 	}
 	m.transcript = append(m.transcript, transcriptItem{Role: "user", Text: query})
+	m.transcriptScroll = 0
 	m.busy = true
 	m.errText = ""
 	if m.mode == modeAgent {
@@ -487,17 +509,21 @@ func (m model) applyAgentDone(msg agentDoneMsg) model {
 func (m *model) appendAssistantDelta(text string) {
 	if len(m.transcript) > 0 && m.transcript[len(m.transcript)-1].Role == "assistant" {
 		m.transcript[len(m.transcript)-1].Text += text
+		m.transcriptScroll = clamp(m.transcriptScroll, 0, m.maxTranscriptScroll())
 		return
 	}
 	m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: text})
+	m.transcriptScroll = clamp(m.transcriptScroll, 0, m.maxTranscriptScroll())
 }
 
 func (m *model) ensureAssistantText(text string) {
 	if len(m.transcript) > 0 && m.transcript[len(m.transcript)-1].Role == "assistant" {
 		m.transcript[len(m.transcript)-1].Text = text
+		m.transcriptScroll = clamp(m.transcriptScroll, 0, m.maxTranscriptScroll())
 		return
 	}
 	m.transcript = append(m.transcript, transcriptItem{Role: "assistant", Text: text})
+	m.transcriptScroll = 0
 }
 
 func (m model) runCommand(query string) (model, command) {
@@ -510,6 +536,7 @@ func (m model) runCommand(query string) (model, command) {
 		return m, tea.Quit
 	case "/new":
 		m.transcript = []transcriptItem{{Role: "system", Text: "New chat session started."}}
+		m.transcriptScroll = 0
 		m.session = history.NewSession(m.providerName, m.modelName)
 		m.agentPrior = nil
 		m.status = "New session"
@@ -648,6 +675,7 @@ func (m model) View() tea.View {
 	v.WindowTitle = "termask tui"
 	v.BackgroundColor = terminalBackgroundColor
 	v.ForegroundColor = terminalForegroundColor
+	v.MouseMode = tea.MouseModeCellMotion
 	return v
 }
 
@@ -684,23 +712,90 @@ func (m model) renderIdle(width, height int) string {
 
 func (m model) renderTranscript(width, height int) string {
 	inner := clamp(width-4, 30, 120)
-	var rendered []string
-	start := 0
-	if len(m.transcript) > 10 {
-		start = len(m.transcript) - 10
-	}
-	for _, item := range m.transcript[start:] {
-		label := roleStyle(item.Role).Render(item.Role)
-		text := item.Text
-		if item.Role == "assistant" && strings.Contains(text, "\n") {
-			text = markdown.Render(text)
-		}
-		rendered = append(rendered, label+" "+wrapPlain(strings.TrimSpace(text), max(12, inner-14)))
-	}
+	rendered := m.transcriptLines(inner)
 	if m.busy {
 		rendered = append(rendered, dimStyle.Render(m.spin.View()+" "+m.status))
 	}
-	return transcriptStyle.Width(inner).Height(height).Render(strings.Join(rendered, "\n\n"))
+	rendered = visibleTranscriptLines(rendered, height, m.transcriptScroll)
+	return transcriptStyle.Width(inner).Render(strings.Join(rendered, "\n"))
+}
+
+func (m model) transcriptLines(width int) []string {
+	textWidth := max(12, width-14)
+	var rendered []string
+	for _, item := range m.transcript {
+		label := roleStyle(item.Role).Render(item.Role)
+		text := strings.TrimSpace(item.Text)
+		if item.Role == "assistant" {
+			text = compactAssistantMarkdown(text)
+		}
+		parts := compactTranscriptLines(splitLines(wrapPlain(text, textWidth)))
+		if len(parts) == 0 {
+			parts = []string{""}
+		}
+		indent := strings.Repeat(" ", lipgloss.Width(item.Role)+1)
+		for i, part := range parts {
+			if i == 0 {
+				rendered = append(rendered, label+" "+part)
+				continue
+			}
+			rendered = append(rendered, indent+part)
+		}
+	}
+	return rendered
+}
+
+func visibleTranscriptLines(lines []string, height, scroll int) []string {
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	scroll = clamp(scroll, 0, len(lines)-height)
+	end := len(lines) - scroll
+	start := max(0, end-height)
+	return lines[start:end]
+}
+
+func compactTranscriptLines(lines []string) []string {
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	end := len(lines)
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	out := make([]string, 0, end-start)
+	blank := false
+	for _, line := range lines[start:end] {
+		isBlank := strings.TrimSpace(line) == ""
+		if isBlank && blank {
+			continue
+		}
+		out = append(out, line)
+		blank = isBlank
+	}
+	return out
+}
+
+func compactAssistantMarkdown(text string) string {
+	var out []string
+	inFence := false
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if !inFence {
+			trimmed = strings.TrimPrefix(trimmed, "### ")
+			trimmed = strings.TrimPrefix(trimmed, "## ")
+			trimmed = strings.TrimPrefix(trimmed, "# ")
+			trimmed = strings.ReplaceAll(trimmed, "**", "")
+			trimmed = strings.ReplaceAll(trimmed, "__", "")
+		}
+		out = append(out, trimmed)
+	}
+	return strings.Join(compactTranscriptLines(out), "\n")
 }
 
 func (m model) renderInput(width int) string {
@@ -710,7 +805,7 @@ func (m model) renderInput(width int) string {
 	hints := dimStyle.Render(hintText(inner))
 	boxContentWidth := max(12, inner-5)
 	box := inputStyle.Width(boxContentWidth).Render(lipgloss.JoinVertical(lipgloss.Left, m.input.View(), "", meta))
-	return lipgloss.JoinVertical(lipgloss.Right, box, hints)
+	return lipgloss.JoinVertical(lipgloss.Center, box, hints)
 }
 
 func (m model) renderFooter(width int) string {
@@ -782,7 +877,7 @@ func hintText(width int) string {
 
 func isShortcutKey(key string) bool {
 	switch key {
-	case "ctrl+c", "esc", "tab", "ctrl+p", "alt+enter", "ctrl+j", "enter":
+	case "ctrl+c", "esc", "tab", "ctrl+p", "alt+enter", "ctrl+j", "enter", "pgup", "pgdown", "home", "end":
 		return true
 	default:
 		return false
@@ -844,9 +939,58 @@ func joinCanvas(lines []string, width, contentWidth int) string {
 	for _, line := range lines {
 		lineWidth := lipgloss.Width(line)
 		contentPad := max(0, contentWidth-lineWidth)
-		out = append(out, strings.Repeat(" ", leftPad)+line+strings.Repeat(" ", contentPad+rightPad))
+		out = append(out, screenPad(leftPad)+line+screenPad(contentPad+rightPad))
 	}
 	return strings.Join(out, "\n")
+}
+
+func (m *model) scrollTranscript(delta int) {
+	m.transcriptScroll = clamp(m.transcriptScroll+delta, 0, m.maxTranscriptScroll())
+}
+
+func (m model) maxTranscriptScroll() int {
+	height := max(1, m.height)
+	contentWidth := responsiveContentWidth(max(24, m.width))
+	inputLines := splitLines(m.renderInput(contentWidth))
+	transcriptHeight := max(1, height-len(inputLines)-1)
+	lineCount := len(m.transcriptLines(clamp(contentWidth-4, 30, 120)))
+	if m.busy {
+		lineCount++
+	}
+	return max(0, lineCount-transcriptHeight)
+}
+
+func (m model) transcriptPageSize() int {
+	height := max(1, m.height)
+	contentWidth := responsiveContentWidth(max(24, m.width))
+	inputLines := splitLines(m.renderInput(contentWidth))
+	return max(1, height-len(inputLines)-2)
+}
+
+func scrollStep() int {
+	return 3
+}
+
+func screenPad(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return screenStyle.Render(strings.Repeat(" ", width))
+}
+
+func normalizedKey(msg tea.KeyPressMsg) string {
+	key := msg.Key()
+	if key.Mod.Contains(tea.ModCtrl) {
+		switch {
+		case key.Code == 'p' || key.ShiftedCode == 'P' || key.BaseCode == 'p' || key.BaseCode == 'P':
+			return "ctrl+p"
+		case key.Code == 'j' || key.ShiftedCode == 'J' || key.BaseCode == 'j' || key.BaseCode == 'J':
+			return "ctrl+j"
+		case key.Code == 'c' || key.ShiftedCode == 'C' || key.BaseCode == 'c' || key.BaseCode == 'C':
+			return "ctrl+c"
+		}
+	}
+	return msg.Keystroke()
 }
 
 func roleStyle(role string) lipgloss.Style {
@@ -1002,6 +1146,7 @@ var (
 			Foreground(lipgloss.Color("#cdd4f4")).
 			Background(inputBackgroundColor).
 			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderBackground(inputBackgroundColor).
 			BorderForeground(lipgloss.Color("#caa7ff")).
 			Padding(1, 2)
 	transcriptStyle = lipgloss.NewStyle().
