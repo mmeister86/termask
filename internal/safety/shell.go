@@ -111,6 +111,7 @@ func isRecursiveForcedRm(tokens []string) bool {
 			continue
 		}
 		var recursive, force bool
+	scan:
 		for _, flag := range tokens[i+1:] {
 			// A new command after a separator has its own flags.
 			if flag == ";" || flag == "&&" || flag == "||" || flag == "|" {
@@ -121,6 +122,8 @@ func isRecursiveForcedRm(tokens []string) bool {
 				recursive = true
 			case "--force":
 				force = true
+			case "--":
+				break scan
 			default:
 				if strings.HasPrefix(flag, "--") {
 					continue
