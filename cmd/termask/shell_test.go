@@ -16,9 +16,23 @@ func TestAskRendersByDefaultUnlessPlain(t *testing.T) {
 	}
 }
 
+func TestShellPluginsDoNotUseEval(t *testing.T) {
+	for name, plugin := range map[string]string{"zsh": zshPlugin(), "bash": bashPlugin()} {
+		if strings.Contains(plugin, "eval") {
+			t.Fatalf("%s plugin must not use eval", name)
+		}
+		if !strings.Contains(plugin, `-- "$query"`) {
+			t.Fatalf("%s plugin should pass query as -- \"$query\"", name)
+		}
+	}
+}
+
 func TestShellPluginsUseDefaultRenderedAskOutput(t *testing.T) {
-	if !strings.Contains(zshPlugin(), "termask ask ") {
+	if !strings.Contains(zshPlugin(), `termask "${args[@]}"`) {
 		t.Fatal("zsh plugin should call termask ask")
+	}
+	if !strings.Contains(bashPlugin(), `termask "${args[@]}"`) {
+		t.Fatal("bash plugin should call termask ask")
 	}
 	if strings.Contains(zshPlugin(), "--render") {
 		t.Fatal("zsh plugin should not need --render anymore")

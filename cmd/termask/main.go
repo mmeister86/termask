@@ -25,6 +25,7 @@ import (
 	prompttpl "github.com/yourusername/termask/internal/template"
 	"github.com/yourusername/termask/internal/tui"
 	"github.com/yourusername/termask/internal/ui"
+	"golang.org/x/term"
 
 	// Register all providers at startup via side-effect imports.
 	anthropicprovider "github.com/yourusername/termask/internal/provider/anthropic"
@@ -333,6 +334,9 @@ func askCmd() *cobra.Command {
 				for scanner.Scan() {
 					lines = append(lines, scanner.Text())
 				}
+				if err := scanner.Err(); err != nil {
+					return err
+				}
 				query = strings.Join(lines, "\n")
 			}
 			if strings.TrimSpace(query) == "" {
@@ -543,6 +547,25 @@ func tuiCmd() *cobra.Command {
 	}
 }
 
+// readAPIKey reads an API key from stdin: masked via term.ReadPassword when
+// stdin is a terminal, otherwise a plain scanner fallback (piped input).
+// Unit-testable only via the non-terminal path.
+func readAPIKey() (string, error) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Println()
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(string(pw)), nil
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		return strings.TrimSpace(scanner.Text()), nil
+	}
+	return "", scanner.Err()
+}
+
 // ── init ──────────────────────────────────────────────────────────────────────
 
 func initCmd() *cobra.Command {
@@ -554,8 +577,7 @@ func initCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Add or update a provider's API key",
 		Example: `  termask init                          # interaktiv (Anthropic)
-  termask init --provider openai         # OpenAI API Key setzen
-  termask init --provider groq --key sk-groq-...`,
+  termask init --provider openai         # OpenAI API Key setzen`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			scanner := bufio.NewScanner(os.Stdin)
 			cfg, _ := config.Load()
@@ -572,8 +594,11 @@ func initCmd() *cobra.Command {
 
 			if providerName != "ollama" && apiKey == "" {
 				fmt.Printf("API Key für %s: ", providerName)
-				scanner.Scan()
-				apiKey = strings.TrimSpace(scanner.Text())
+				key, err := readAPIKey()
+				if err != nil {
+					return err
+				}
+				apiKey = strings.TrimSpace(key)
 				if apiKey == "" {
 					return fmt.Errorf("API Key darf nicht leer sein")
 				}
@@ -606,7 +631,7 @@ func initCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&providerName, "provider", "", "Provider-Name")
-	cmd.Flags().StringVar(&apiKey, "key", "", "API Key (alternativ: interaktive Eingabe)")
+	cmd.Flags().StringVar(&apiKey, "key", "", "API Key (deprecated: prefer interactive input)")
 	cmd.Flags().StringVar(&model, "model", "", "Standard-Modell für diesen Provider")
 	return cmd
 }
@@ -1248,10 +1273,12 @@ case ":$PATH:" in
 esac
 
 _termask_ask() {
-  local query provider_flag=""
+  local query
+  local -a args
+  args=(ask)
 
   # Optionaler Provider-Override: TERMASK_PROVIDER=openai Ctrl+K
-  [[ -n "$TERMASK_PROVIDER" ]] && provider_flag="--provider $TERMASK_PROVIDER"
+  [[ -n "$TERMASK_PROVIDER" ]] && args+=(--provider "$TERMASK_PROVIDER")
 
   if [[ -n "$BUFFER" ]]; then
     query="$BUFFER"
@@ -1264,7 +1291,7 @@ _termask_ask() {
 
   [[ -z "$query" ]] && zle reset-prompt && return
 
-  eval "termask ask $provider_flag \"$query\"" | less -FIRX
+  termask "${args[@]}" -- "$query" | less -FIRX
   zle reset-prompt
 }
 
@@ -1286,8 +1313,8 @@ esac
 
 _termask_ask() {
   local query="$READLINE_LINE"
-  local provider_flag=""
-  [[ -n "$TERMASK_PROVIDER" ]] && provider_flag="--provider $TERMASK_PROVIDER"
+  local args=(ask)
+  [[ -n "$TERMASK_PROVIDER" ]] && args+=(--provider "$TERMASK_PROVIDER")
 
   if [[ -z "$query" ]]; then
     echo -n $'\n  termask › '
@@ -1300,7 +1327,7 @@ _termask_ask() {
   [[ -z "$query" ]] && return
 
   echo ""
-  eval "termask ask $provider_flag \"$query\"" | less -FIRX
+  termask "${args[@]}" -- "$query" | less -FIRX
 }
 
 bind -x '"\C-k": _termask_ask'
