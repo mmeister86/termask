@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -204,6 +206,8 @@ func askCmd() *cobra.Command {
 	return cmd
 }
 
+func isCanceled(err error) bool { return errors.Is(err, context.Canceled) }
+
 func hasRiskyCommands(report safety.Report) bool {
 	for _, cmd := range report.Commands {
 		if cmd.Risk == safety.RiskMedium || cmd.Risk == safety.RiskHigh {
@@ -271,6 +275,10 @@ func chatCmd() *cobra.Command {
 				})
 				stop()
 				if err != nil {
+					if isCanceled(err) {
+						ui.Dim.Fprintln(os.Stderr, "Abgebrochen.")
+						continue
+					}
 					return err
 				}
 				if !strings.HasSuffix(resp.Text, "\n") {
