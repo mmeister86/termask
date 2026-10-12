@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/yourusername/termask/internal/provider"
 )
@@ -54,16 +53,22 @@ func (p *Provider) Models(ctx context.Context, cfg provider.ProviderConfig) ([]p
 
 // ── Streaming types ──────────────────────────────────────────────────────────
 
-type generateRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	System string `json:"system,omitempty"`
-	Stream bool   `json:"stream"`
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type generateChunk struct {
-	Response string `json:"response"`
-	Done     bool   `json:"done"`
+type chatRequest struct {
+	Model    string        `json:"model"`
+	Messages []chatMessage `json:"messages"`
+	Stream   bool          `json:"stream"`
+}
+
+type chatChunk struct {
+	Message struct {
+		Content string `json:"content"`
+	} `json:"message"`
+	Done bool `json:"done"`
 }
 
 // ── Ask ──────────────────────────────────────────────────────────────────────
@@ -89,25 +94,24 @@ func (p *Provider) AskMessages(
 		return fmt.Errorf("ollama: no model set — run `termask providers add ollama --model llama3`")
 	}
 
-	var prompt strings.Builder
+	apiMessages := []chatMessage{}
+	if systemPrompt != "" {
+		apiMessages = append(apiMessages, chatMessage{Role: "system", Content: systemPrompt})
+	}
 	for _, msg := range messages {
-		if msg.Role == "system" {
-			continue
-		}
-		fmt.Fprintf(&prompt, "%s: %s\n\n", msg.Role, msg.Content)
+		apiMessages = append(apiMessages, chatMessage{Role: msg.Role, Content: msg.Content})
 	}
 
-	body, err := json.Marshal(generateRequest{
-		Model:  model,
-		Prompt: prompt.String(),
-		System: systemPrompt,
-		Stream: true,
+	body, err := json.Marshal(chatRequest{
+		Model:    model,
+		Messages: apiMessages,
+		Stream:   true,
 	})
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL(cfg)+"/api/generate", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL(cfg)+"/api/chat", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -125,12 +129,13 @@ func (p *Provider) AskMessages(
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
-		var chunk generateChunk
+		var chunk chatChunk
 		if err := json.Unmarshal(scanner.Bytes(), &chunk); err != nil {
 			continue
 		}
-		fmt.Fprint(out, chunk.Response)
+		fmt.Fprint(out, chunk.Message.Content)
 		if chunk.Done {
 			break
 		}

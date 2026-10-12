@@ -1,14 +1,12 @@
 package anthropic
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/yourusername/termask/internal/provider"
 )
@@ -94,7 +92,7 @@ func (p *Provider) AskMessages(
 	}
 	body, err := json.Marshal(apiRequest{
 		Model:     model,
-		MaxTokens: 2048,
+		MaxTokens: 8192,
 		System:    systemPrompt,
 		Messages:  apiMessages,
 		Stream:    true,
@@ -122,27 +120,14 @@ func (p *Provider) AskMessages(
 		return fmt.Errorf("anthropic API %d: %s", resp.StatusCode, raw)
 	}
 
-	return readSSE(resp.Body, out)
-}
-
-func readSSE(r io.Reader, out io.Writer) error {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
+	return provider.ScanSSE(resp.Body, func(data string) error {
 		var evt streamEvent
 		if err := json.Unmarshal([]byte(data), &evt); err != nil {
-			continue
+			return nil
 		}
 		if evt.Type == "content_block_delta" && evt.Delta != nil && evt.Delta.Type == "text_delta" {
 			fmt.Fprint(out, evt.Delta.Text)
 		}
-	}
-	return scanner.Err()
+		return nil
+	})
 }
