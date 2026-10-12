@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/mmeister86/termask/internal/config"
 	"github.com/mmeister86/termask/internal/provider"
@@ -73,13 +74,17 @@ func CheckConfig(path string, cfg config.Config, registeredProviders []string) R
 	return result
 }
 
-// CheckLive probes whether the provider is reachable right now by listing
-// its models. Failure is a warning, never an error: an offline local
-// provider (e.g. Ollama not running) must not hard-fail doctor.
+// CheckLive lists the provider's models with a 5s timeout. Failure is a
+// warning, never an error: an offline local provider (e.g. Ollama not
+// running) must not hard-fail doctor. Note static-list providers return a
+// hardcoded list, so success only means N models are available, not that
+// the provider API is reachable.
 func CheckLive(ctx context.Context, cfg config.Config, p provider.Provider) Item {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	models, err := p.Models(ctx, cfg.Providers[p.Name()])
 	if err != nil {
 		return Item{Level: LevelWarn, Message: fmt.Sprintf("live check: %s unreachable (%v)", p.Name(), err)}
 	}
-	return Item{Level: LevelOK, Message: fmt.Sprintf("live check: %s listed %d models", p.Name(), len(models))}
+	return Item{Level: LevelOK, Message: fmt.Sprintf("live check: %s: %d models available", p.Name(), len(models))}
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -435,7 +436,11 @@ func configCmd() *cobra.Command {
 			case "system_prompt":
 				cfg.SystemPrompt = args[1]
 			case "history_enabled":
-				cfg.HistoryEnabled = args[1] == "true"
+				b, err := strconv.ParseBool(args[1])
+				if err != nil {
+					return fmt.Errorf("history_enabled must be true or false")
+				}
+				cfg.HistoryEnabled = b
 			default:
 				return fmt.Errorf("unsupported config key %q", args[0])
 			}

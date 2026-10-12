@@ -8,13 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spf13/cobra"
 	agentpkg "github.com/mmeister86/termask/internal/agent"
 	"github.com/mmeister86/termask/internal/config"
 	"github.com/mmeister86/termask/internal/contextfiles"
 	"github.com/mmeister86/termask/internal/history"
 	"github.com/mmeister86/termask/internal/markdown"
 	"github.com/mmeister86/termask/internal/ui"
+	"github.com/spf13/cobra"
 )
 
 // ── agent ────────────────────────────────────────────────────────────────────
@@ -55,8 +55,9 @@ func agentCmd() *cobra.Command {
 				}
 			}
 
-			ctx := rootCtx()
-			model, err := agentpkg.NewProviderModel(ctx, cfg, providerName, modelOverride)
+			setupCtx, stopSetup := turnCtx()
+			model, err := agentpkg.NewProviderModel(setupCtx, cfg, providerName, modelOverride)
+			stopSetup()
 			if err != nil {
 				return err
 			}
@@ -66,7 +67,7 @@ func agentCmd() *cobra.Command {
 			}
 			runner := agentpkg.New(model, agentpkg.NewToolset(workspace))
 			if shouldRunAgentSession(len(args) > 0, plainOutput, stdinIsTerminal(os.Stdin)) {
-				return runAgentSession(ctx, cfg, runner, model, goal, explicitContext, maxSteps)
+				return runAgentSession(context.Background(), cfg, runner, model, goal, explicitContext, maxSteps)
 			}
 
 			if strings.TrimSpace(goal) == "" {
@@ -85,7 +86,7 @@ func agentCmd() *cobra.Command {
 				return fmt.Errorf("kein Ziel angegeben")
 			}
 
-			resp, err := runner.Run(ctx, agentpkg.Request{
+			resp, err := runner.Run(rootCtx(), agentpkg.Request{
 				Goal:     goal,
 				MaxSteps: maxSteps,
 				Context:  explicitContext,

@@ -56,6 +56,21 @@ func TestAskMessages_StreamsTwoDeltas(t *testing.T) {
 	}
 }
 
+func TestAskMessages_MidStreamError(t *testing.T) {
+	srv := streamServer(t,
+		"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\n"+
+			"data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded\",\"message\":\"server busy\"}}\n\n", nil)
+	defer srv.Close()
+
+	var out bytes.Buffer
+	err := New().AskMessages(context.Background(),
+		provider.ProviderConfig{APIKey: "test", BaseURL: srv.URL},
+		"", []provider.Message{{Role: "user", Content: "hi"}}, &out)
+	if err == nil || !strings.Contains(err.Error(), "server busy") {
+		t.Fatalf("want error containing API message, got %v", err)
+	}
+}
+
 func TestAskMessages_HTTP500(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

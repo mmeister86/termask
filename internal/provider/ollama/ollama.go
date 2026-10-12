@@ -68,7 +68,8 @@ type chatChunk struct {
 	Message struct {
 		Content string `json:"content"`
 	} `json:"message"`
-	Done bool `json:"done"`
+	Done  bool   `json:"done"`
+	Error string `json:"error"`
 }
 
 // ── Ask ──────────────────────────────────────────────────────────────────────
@@ -130,17 +131,28 @@ func (p *Provider) AskMessages(
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	done := false
 	for scanner.Scan() {
 		var chunk chatChunk
 		if err := json.Unmarshal(scanner.Bytes(), &chunk); err != nil {
 			continue
 		}
+		if chunk.Error != "" {
+			return fmt.Errorf("ollama: %s", chunk.Error)
+		}
 		fmt.Fprint(out, chunk.Message.Content)
 		if chunk.Done {
+			done = true
 			break
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if !done {
+		return fmt.Errorf("ollama: stream ended before done")
+	}
+	return nil
 }
 
 func baseURL(cfg provider.ProviderConfig) string {

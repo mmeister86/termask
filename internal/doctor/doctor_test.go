@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mmeister86/termask/internal/config"
 	"github.com/mmeister86/termask/internal/provider"
@@ -100,7 +101,28 @@ func TestCheckLiveSuccessIsOK(t *testing.T) {
 	if item.Level != LevelOK {
 		t.Fatalf("Level = %q, want ok", item.Level)
 	}
-	if want := "live check: ollama listed 1 models"; item.Message != want {
+	if want := "live check: ollama: 1 models available"; item.Message != want {
 		t.Fatalf("Message = %q, want %q", item.Message, want)
+	}
+}
+
+type hangingProvider struct{ stubProvider }
+
+func (s hangingProvider) Name() string { return "hang" }
+func (s hangingProvider) Models(ctx context.Context, _ provider.ProviderConfig) ([]provider.Model, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestCheckLiveTimeoutIsWarn(t *testing.T) {
+	start := time.Now()
+	item := CheckLive(context.Background(), config.Config{
+		Providers: map[string]provider.ProviderConfig{"hang": {}},
+	}, hangingProvider{})
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("CheckLive took %v, want ~5s timeout bound", elapsed)
+	}
+	if item.Level != LevelWarn {
+		t.Fatalf("Level = %q, want warn", item.Level)
 	}
 }

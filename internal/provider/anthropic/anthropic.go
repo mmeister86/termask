@@ -49,6 +49,10 @@ type streamEvent struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"delta"`
+	Error *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 // ── Ask ──────────────────────────────────────────────────────────────────────
@@ -124,6 +128,13 @@ func (p *Provider) AskMessages(
 		var evt streamEvent
 		if err := json.Unmarshal([]byte(data), &evt); err != nil {
 			return nil
+		}
+		if evt.Type == "error" {
+			msg := "unknown error"
+			if evt.Error != nil && evt.Error.Message != "" {
+				msg = evt.Error.Message
+			}
+			return fmt.Errorf("anthropic: %s", msg)
 		}
 		if evt.Type == "content_block_delta" && evt.Delta != nil && evt.Delta.Type == "text_delta" {
 			fmt.Fprint(out, evt.Delta.Text)
