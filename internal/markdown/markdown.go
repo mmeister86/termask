@@ -4,15 +4,21 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"charm.land/glamour/v2"
 )
 
-func Render(input string) string {
-	renderer, err := glamour.NewTermRenderer(
+// shortcut: COLUMNS read once at first render, restart shell to change
+var getRenderer = sync.OnceValues(func() (*glamour.TermRenderer, error) {
+	return glamour.NewTermRenderer(
 		glamour.WithStandardStyle("dark"),
 		glamour.WithWordWrap(wordWrap()),
 	)
+})
+
+func Render(input string) string {
+	renderer, err := getRenderer()
 	if err != nil {
 		return input
 	}

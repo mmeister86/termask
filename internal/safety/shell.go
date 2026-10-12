@@ -68,30 +68,97 @@ func classify(line string) Command {
 	line = strings.TrimPrefix(line, "$ ")
 	reasons := []string{}
 	risk := RiskLow
-	checks := []struct {
+	mark := func(reason string, r Risk) {
+		reasons = append(reasons, reason)
+		if r == RiskHigh {
+			risk = RiskHigh
+		} else if risk != RiskHigh {
+			risk = r
+		}
+	}
+	tokens := strings.Fields(line)
+	if isRecursiveForcedRm(tokens) {
+		mark("recursive forced deletion", RiskHigh)
+	}
+	if isPipeToShell(tokens) {
+		mark("pipes remote or generated content into a shell", RiskHigh)
+	}
+	for _, check := range []struct {
 		pattern string
 		reason  string
 		risk    Risk
 	}{
-		{"rm -rf", "recursive forced deletion", RiskHigh},
 		{"sudo ", "privileged command", RiskHigh},
 		{"curl ", "downloads remote content", RiskMedium},
 		{"wget ", "downloads remote content", RiskMedium},
-		{"| sh", "pipes remote or generated content into a shell", RiskHigh},
-		{"| bash", "pipes remote or generated content into a shell", RiskHigh},
 		{"> /etc/", "writes into system configuration", RiskHigh},
 		{"chmod 777", "opens broad write/execute permissions", RiskMedium},
 		{"chown ", "changes file ownership", RiskMedium},
-	}
-	for _, check := range checks {
+	} {
 		if strings.Contains(line, check.pattern) {
-			reasons = append(reasons, check.reason)
-			if check.risk == RiskHigh {
-				risk = RiskHigh
-			} else if risk != RiskHigh {
-				risk = check.risk
-			}
+			mark(check.reason, check.risk)
 		}
 	}
 	return Command{Text: line, Risk: risk, Reasons: reasons}
+}
+
+// isRecursiveForcedRm reports whether the tokens invoke rm with both a
+// recursive and a force flag, in any spelling: -rf, -r -f, --recursive --force.
+func isRecursiveForcedRm(tokens []string) bool {
+	for i, tok := range tokens {
+		if tok != "rm" && !strings.HasSuffix(tok, "/rm") {
+			continue
+		}
+		var recursive, force bool
+		for _, flag := range tokens[i+1:] {
+			switch flag {
+			case "--recursive":
+				recursive = true
+			case "--force":
+				force = true
+			default:
+				if strings.HasPrefix(flag, "--") {
+					continue
+				}
+				if strings.HasPrefix(flag, "-") && len(flag) > 1 {
+					for _, c := range flag[1:] {
+						switch c {
+						case 'r', 'R':
+							recursive = true
+						case 'f':
+							force = true
+						}
+					}
+				}
+			}
+		}
+		if recursive && force {
+			return true
+		}
+	}
+	return false
+}
+
+// isPipeToShell reports whether any pipe token feeds sh/bash/zsh,
+// with or without a space after the pipe.
+func isPipeToShell(tokens []string) bool {
+	for i, tok := range tokens {
+		name := ""
+		if tok == "|" {
+			if i+1 >= len(tokens) {
+				return false
+			}
+			name = tokens[i+1]
+		} else if strings.HasPrefix(tok, "|") {
+			name = strings.TrimPrefix(tok, "|")
+		} else {
+			continue
+		}
+		name = strings.Trim(name, "; &")
+		switch name {
+		case "sh", "bash", "zsh":
+			return true
+		}
+	}
+	return false
 }

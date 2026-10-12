@@ -33,3 +33,11 @@ func TestRenderRemovesCommonMarkdownMarkers(t *testing.T) {
 func stripANSI(input string) string {
 	return ansiPattern.ReplaceAllString(input, "")
 }
+
+func TestRenderTwiceSameOutput(t *testing.T) {
+	first := Render("# hi\n\nsome **text**")
+	second := Render("# hi\n\nsome **text**")
+	if first != second {
+		t.Fatalf("two renders differ:\n%q\n%q", first, second)
+	}
+}

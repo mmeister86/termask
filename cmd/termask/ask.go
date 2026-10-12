@@ -183,6 +183,10 @@ func askCmd() *cobra.Command {
 			}
 			if safetyMode {
 				printSafety(safety.AnalyzeShell(resp.Text))
+			} else if !plainOutput {
+				if report := safety.AnalyzeShell(resp.Text); hasRiskyCommands(report) {
+					printSafety(report)
+				}
 			}
 			return nil
 		},
@@ -197,6 +201,15 @@ func askCmd() *cobra.Command {
 	cmd.Flags().StringVar(&savePath, "save", "", "Save the answer text to a file")
 	cmd.Flags().BoolVar(&safetyMode, "safety", false, "Analyze shell commands in the answer for risky patterns")
 	return cmd
+}
+
+func hasRiskyCommands(report safety.Report) bool {
+	for _, cmd := range report.Commands {
+		if cmd.Risk == safety.RiskMedium || cmd.Risk == safety.RiskHigh {
+			return true
+		}
+	}
+	return false
 }
 
 // ── chat ─────────────────────────────────────────────────────────────────────
