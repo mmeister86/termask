@@ -124,6 +124,10 @@ func askCmd() *cobra.Command {
 					if _, fresh, err := cfg.ActiveProviderConfig(pName); err == nil {
 						pcfg = fresh
 					}
+					// --model wins over the reloaded config copy for this run only.
+					if modelOverride != "" {
+						pcfg.Model = modelOverride
+					}
 					for _, msg := range session.Messages {
 						prior = append(prior, provider.Message{Role: msg.Role, Content: msg.Content})
 					}
