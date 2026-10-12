@@ -87,6 +87,11 @@ func (s *Session) add(role, content string) {
 }
 
 func (s Store) Save(session Session) error {
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	sessions, err := s.List()
 	if err != nil {
 		return err
@@ -191,11 +196,11 @@ func (s Store) writeAll(sessions []Session) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	file, err := os.CreateTemp(filepath.Dir(s.path), ".history-*.tmp")
 	if err != nil {
 		return err
 	}
+	tmp := file.Name()
 	enc := json.NewEncoder(file)
 	for _, session := range sessions {
 		if err := enc.Encode(session); err != nil {

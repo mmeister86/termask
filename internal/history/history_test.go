@@ -1,9 +1,11 @@
 package history
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -132,5 +134,75 @@ func TestWriteAllLeavesNoTmpOnSuccess(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Fatalf("tmp file left behind or stat failed: %v", err)
+	}
+}
+
+func TestConcurrentSavesKeepAllSessions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+	a := NewStore(path)
+	b := NewStore(path)
+
+	sessions := make([]Session, 0, 20)
+	for i := 0; i < 20; i++ {
+		s := NewSession("anthropic", "model")
+		s.AddUser(fmt.Sprintf("session %d", i))
+		sessions = append(sessions, s)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, len(sessions))
+	for i, s := range sessions {
+		store := a
+		if i%2 == 1 {
+			store = b
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := store.Save(s); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	got, err := a.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != len(sessions) {
+		t.Fatalf("len = %d, want %d (lost updates without cross-process lock)", len(got), len(sessions))
+	}
+	want := map[string]bool{}
+	for _, s := range sessions {
+		want[s.ID] = true
+	}
+	for _, s := range got {
+		delete(want, s.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing %d sessions after concurrent saves", len(want))
+	}
+}
+
+func TestWriteAllUniqueTmp(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "history.jsonl")
+	store := NewStore(path)
+
+	session := NewSession("anthropic", "model")
+	if err := store.Save(session); err != nil {
+		t.Fatal(err)
+	}
+	leftovers, err := filepath.Glob(filepath.Join(dir, ".history-*.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftovers) != 0 {
+		t.Fatalf("tmp leftovers: %v", leftovers)
 	}
 }

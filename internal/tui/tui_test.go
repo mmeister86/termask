@@ -12,7 +12,9 @@ import (
 	"github.com/mmeister86/termask/internal/agent"
 	"github.com/mmeister86/termask/internal/ask"
 	"github.com/mmeister86/termask/internal/config"
+	"github.com/mmeister86/termask/internal/history"
 	"github.com/mmeister86/termask/internal/provider"
+	"time"
 )
 
 func TestModelSwitchesModesAndCommandPalette(t *testing.T) {
@@ -409,6 +411,47 @@ func TestViewSetsTerminalBackgroundColor(t *testing.T) {
 	}
 	if view.MouseMode != tea.MouseModeCellMotion {
 		t.Fatal("view should enable mouse wheel events for transcript scrolling")
+	}
+}
+
+func TestModelHistoryStoreRespectsConfiguredLimit(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.Default()
+	cfg.DefaultProvider = "anthropic"
+	cfg.Providers = map[string]provider.ProviderConfig{
+		"anthropic": {Model: "claude-test"},
+		"openai":    {Model: "gpt-test"},
+	}
+	cfg.HistoryEnabled = true
+	cfg.HistoryLimit = 2
+	m, err := newModel(context.Background(), cfg, modelOptions{
+		chatRunner: fakeChatRunner(func(req ask.Request) (ask.Response, error) {
+			return ask.Response{ProviderName: "anthropic", Model: "claude-test", Text: "ok"}, nil
+		}),
+		agentRunner: fakeAgentRunner{},
+		workspace:   "/tmp/termask-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.store == nil {
+		t.Fatal("model should have a history store when history is enabled")
+	}
+	for i := 0; i < 3; i++ {
+		s := history.NewSession("anthropic", "claude-test")
+		s.UpdatedAt = time.Now().UTC().Add(time.Duration(i) * time.Second)
+		s.CreatedAt = s.UpdatedAt
+		if err := m.store.Save(s); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	sessions, err := m.store.List()
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("len = %d, want 2 (TUI store should use cfg.HistoryLimit)", len(sessions))
 	}
 }
 

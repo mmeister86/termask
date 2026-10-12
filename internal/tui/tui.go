@@ -215,7 +215,7 @@ func newModel(ctx context.Context, cfg config.Config, opts modelOptions) (model,
 		if err != nil {
 			return model{}, err
 		}
-		store = history.NewStore(path)
+		store = history.NewStoreWithLimit(path, cfg.HistoryLimit)
 	}
 
 	return model{
