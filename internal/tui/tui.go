@@ -390,7 +390,10 @@ func (m model) submit() (model, command) {
 }
 
 func (m model) runChat(query string) command {
-	historyMessages := sessionMessages(m.session)
+	historyMessages := make([]provider.Message, 0, len(m.session.Messages))
+	for _, msg := range m.session.Messages {
+		historyMessages = append(historyMessages, provider.Message{Role: msg.Role, Content: msg.Content})
+	}
 	return func() tea.Msg {
 		ch := make(chan tea.Msg, 32)
 		go func() {
@@ -1006,14 +1009,6 @@ func roleStyle(role string) lipgloss.Style {
 	default:
 		return dimStyle
 	}
-}
-
-func sessionMessages(session history.Session) []provider.Message {
-	messages := make([]provider.Message, 0, len(session.Messages))
-	for _, msg := range session.Messages {
-		messages = append(messages, provider.Message{Role: msg.Role, Content: msg.Content})
-	}
-	return messages
 }
 
 func agentHistorySummary(resp agent.Response) string {

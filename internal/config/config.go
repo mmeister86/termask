@@ -16,7 +16,6 @@ type Config struct {
 	SystemPrompt    string                             `toml:"system_prompt"`
 	HistoryEnabled  bool                               `toml:"history_enabled"`
 	HistoryLimit    int                                `toml:"history_limit"`
-	RenderMarkdown  bool                               `toml:"render_markdown"`
 	Templates       map[string]PromptTemplate          `toml:"templates"`
 	Providers       map[string]provider.ProviderConfig `toml:"providers"`
 }
@@ -31,7 +30,6 @@ func Default() Config {
 		DefaultProvider: "anthropic",
 		HistoryEnabled:  true,
 		HistoryLimit:    100,
-		RenderMarkdown:  false,
 		SystemPrompt: `You are a helpful shell assistant.
 Answer concisely and always prefer practical shell commands, scripts, and one-liners.
 When writing scripts, use best practices: error handling, comments, portability.

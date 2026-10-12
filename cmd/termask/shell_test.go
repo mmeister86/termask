@@ -8,10 +8,10 @@ import (
 )
 
 func TestAskRendersByDefaultUnlessPlain(t *testing.T) {
-	if !shouldRenderAskOutput(false) {
+	if !shouldRender(false) {
 		t.Fatal("ask should render by default")
 	}
-	if shouldRenderAskOutput(true) {
+	if shouldRender(true) {
 		t.Fatal("ask --plain should disable rendering")
 	}
 }
@@ -56,10 +56,10 @@ func TestAgentCommandExposesExpectedFlags(t *testing.T) {
 }
 
 func TestAgentRendersByDefaultUnlessPlain(t *testing.T) {
-	if !shouldRenderAgentOutput(false) {
+	if !shouldRender(false) {
 		t.Fatal("agent should render by default")
 	}
-	if shouldRenderAgentOutput(true) {
+	if shouldRender(true) {
 		t.Fatal("agent --plain should disable rendering")
 	}
 }
