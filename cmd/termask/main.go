@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -65,6 +66,13 @@ func init() {
 		},
 	))
 }
+
+// appCtx is cancelled on Ctrl+C (SIGINT) so in-flight provider calls abort
+// instead of hanging until the server responds. Process-lifetime: no stop call.
+var appCtx, _ = signal.NotifyContext(context.Background(), os.Interrupt)
+
+// rootCtx returns the shared cancellable context for all commands.
+func rootCtx() context.Context { return appCtx }
 
 func main() {
 	root := &cobra.Command{
@@ -130,7 +138,7 @@ func agentCmd() *cobra.Command {
 				}
 			}
 
-			ctx := context.Background()
+			ctx := rootCtx()
 			model, err := agentpkg.NewProviderModel(ctx, cfg, providerName)
 			if err != nil {
 				return err
@@ -373,7 +381,7 @@ func askCmd() *cobra.Command {
 				ui.PrintHeader(query, pName, pcfg.Model)
 			}
 
-			ctx := context.Background()
+			ctx := rootCtx()
 			var prior []provider.Message
 			var session history.Session
 			var store history.Store
@@ -501,7 +509,7 @@ func chatCmd() *cobra.Command {
 					continue
 				}
 				prior := sessionMessages(session)
-				resp, err := ask.Run(context.Background(), cfg, ask.Request{
+				resp, err := ask.Run(rootCtx(), cfg, ask.Request{
 					ProviderName: providerName,
 					Query:        query,
 					History:      prior,
@@ -542,7 +550,7 @@ func tuiCmd() *cobra.Command {
 				return err
 			}
 			registerConfiguredProviders(cfg)
-			return tui.Run(context.Background(), cfg)
+			return tui.Run(rootCtx(), cfg)
 		},
 	}
 }
@@ -607,7 +615,7 @@ func initCmd() *cobra.Command {
 			if model == "" {
 				p, err := provider.Get(providerName)
 				if err == nil {
-					models, _ := p.Models(context.Background(), provider.ProviderConfig{})
+					models, _ := p.Models(rootCtx(), provider.ProviderConfig{})
 					if len(models) > 0 {
 						fmt.Printf("Model (default: %s): ", models[0].ID)
 						scanner.Scan()
@@ -745,7 +753,7 @@ func modelsCmd() *cobra.Command {
 			}
 
 			_, pcfg, _ := cfg.ActiveProviderConfig(providerName)
-			models, err := p.Models(context.Background(), pcfg)
+			models, err := p.Models(rootCtx(), pcfg)
 			if err != nil {
 				return fmt.Errorf("models: %w", err)
 			}
