@@ -377,8 +377,8 @@ func askCmd() *cobra.Command {
 				return err
 			}
 
-			if !plainOutput {
-				ui.PrintHeader(query, pName, pcfg.Model)
+			if err := continueError(cfg, continueLast); err != nil {
+				return err
 			}
 
 			ctx := rootCtx()
@@ -400,12 +400,20 @@ func askCmd() *cobra.Command {
 						providerName = session.Provider
 						pName = session.Provider
 					}
+					// Reload so header/session model match the continued conversation.
+					if _, fresh, err := cfg.ActiveProviderConfig(pName); err == nil {
+						pcfg = fresh
+					}
 					for _, msg := range session.Messages {
 						prior = append(prior, provider.Message{Role: msg.Role, Content: msg.Content})
 					}
 				} else {
 					session = history.NewSession(pName, pcfg.Model)
 				}
+			}
+
+			if !plainOutput {
+				ui.PrintHeader(query, pName, pcfg.Model)
 			}
 
 			renderOutput := shouldRenderAskOutput(plainOutput)
@@ -1017,6 +1025,9 @@ func doctorCmd() *cobra.Command {
 			registerConfiguredProviders(cfg)
 			path, _ := config.ConfigPath()
 			result := doctor.CheckConfig(path, cfg, provider.List())
+			if p, err := provider.Get(cfg.DefaultProvider); err == nil {
+				result.Items = append(result.Items, doctor.CheckLive(rootCtx(), cfg, p))
+			}
 			for _, item := range result.Items {
 				switch item.Level {
 				case doctor.LevelOK:
@@ -1081,6 +1092,13 @@ func defaultHistoryStore(limit int) (history.Store, error) {
 		return history.Store{}, err
 	}
 	return history.NewStoreWithLimit(path, limit), nil
+}
+
+func continueError(cfg config.Config, continueLast bool) error {
+	if continueLast && !cfg.HistoryEnabled {
+		return fmt.Errorf("--continue needs history_enabled=true")
+	}
+	return nil
 }
 
 func sessionMessages(session history.Session) []provider.Message {
