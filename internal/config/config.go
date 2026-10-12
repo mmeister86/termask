@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 // Config is the top-level config file structure.

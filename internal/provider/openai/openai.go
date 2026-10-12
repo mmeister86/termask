@@ -11,7 +11,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 const defaultBaseURL = "https://api.openai.com/v1/chat/completions"

@@ -1,4 +1,4 @@
-module github.com/yourusername/termask
+module github.com/mmeister86/termask
 
 go 1.25.8
 

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/yourusername/termask/internal/config"
+	"github.com/mmeister86/termask/internal/config"
 )
 
 func TestAskContinueRequiresHistory(t *testing.T) {

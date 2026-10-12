@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 const defaultBaseURL = "https://api.anthropic.com/v1/messages"

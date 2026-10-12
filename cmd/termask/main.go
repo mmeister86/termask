@@ -6,12 +6,12 @@ import (
 	"os/signal"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/provider"
 
 	// Register all providers at startup via side-effect imports.
-	anthropicprovider "github.com/yourusername/termask/internal/provider/anthropic"
-	ollamaprovider "github.com/yourusername/termask/internal/provider/ollama"
-	openaiprovider "github.com/yourusername/termask/internal/provider/openai"
+	anthropicprovider "github.com/mmeister86/termask/internal/provider/anthropic"
+	ollamaprovider "github.com/mmeister86/termask/internal/provider/ollama"
+	openaiprovider "github.com/mmeister86/termask/internal/provider/openai"
 )
 
 func init() {

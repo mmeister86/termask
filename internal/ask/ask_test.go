@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourusername/termask/internal/config"
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/config"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 type blockingStub struct{}

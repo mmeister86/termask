@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 func streamServer(t *testing.T, body string, capture *bytes.Buffer) *httptest.Server {

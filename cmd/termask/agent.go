@@ -9,12 +9,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	agentpkg "github.com/yourusername/termask/internal/agent"
-	"github.com/yourusername/termask/internal/config"
-	"github.com/yourusername/termask/internal/contextfiles"
-	"github.com/yourusername/termask/internal/history"
-	"github.com/yourusername/termask/internal/markdown"
-	"github.com/yourusername/termask/internal/ui"
+	agentpkg "github.com/mmeister86/termask/internal/agent"
+	"github.com/mmeister86/termask/internal/config"
+	"github.com/mmeister86/termask/internal/contextfiles"
+	"github.com/mmeister86/termask/internal/history"
+	"github.com/mmeister86/termask/internal/markdown"
+	"github.com/mmeister86/termask/internal/ui"
 )
 
 // ── agent ────────────────────────────────────────────────────────────────────

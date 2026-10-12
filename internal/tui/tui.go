@@ -15,11 +15,11 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/yourusername/termask/internal/agent"
-	"github.com/yourusername/termask/internal/ask"
-	"github.com/yourusername/termask/internal/config"
-	"github.com/yourusername/termask/internal/history"
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/agent"
+	"github.com/mmeister86/termask/internal/ask"
+	"github.com/mmeister86/termask/internal/config"
+	"github.com/mmeister86/termask/internal/history"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 type command = tea.Cmd

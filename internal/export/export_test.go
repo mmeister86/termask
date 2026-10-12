@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yourusername/termask/internal/history"
+	"github.com/mmeister86/termask/internal/history"
 )
 
 func TestSessionMarkdown(t *testing.T) {

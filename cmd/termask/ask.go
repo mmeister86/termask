@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/yourusername/termask/internal/ask"
-	"github.com/yourusername/termask/internal/config"
-	"github.com/yourusername/termask/internal/contextfiles"
-	"github.com/yourusername/termask/internal/history"
-	"github.com/yourusername/termask/internal/markdown"
-	"github.com/yourusername/termask/internal/provider"
-	"github.com/yourusername/termask/internal/safety"
-	prompttpl "github.com/yourusername/termask/internal/template"
-	"github.com/yourusername/termask/internal/tui"
-	"github.com/yourusername/termask/internal/ui"
+	"github.com/mmeister86/termask/internal/ask"
+	"github.com/mmeister86/termask/internal/config"
+	"github.com/mmeister86/termask/internal/contextfiles"
+	"github.com/mmeister86/termask/internal/history"
+	"github.com/mmeister86/termask/internal/markdown"
+	"github.com/mmeister86/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/safety"
+	prompttpl "github.com/mmeister86/termask/internal/template"
+	"github.com/mmeister86/termask/internal/tui"
+	"github.com/mmeister86/termask/internal/ui"
 )
 
 // ── ask ───────────────────────────────────────────────────────────────────────

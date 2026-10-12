@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	agentpkg "github.com/yourusername/termask/internal/agent"
+	agentpkg "github.com/mmeister86/termask/internal/agent"
 )
 
 func TestAskRendersByDefaultUnlessPlain(t *testing.T) {
