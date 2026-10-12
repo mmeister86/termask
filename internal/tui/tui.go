@@ -57,7 +57,7 @@ type realAgentRunner struct {
 }
 
 func newRealAgentRunner(ctx context.Context, cfg config.Config, providerName, workspace string) (realAgentRunner, error) {
-	model, err := agent.NewProviderModel(ctx, cfg, providerName)
+	model, err := agent.NewProviderModel(ctx, cfg, providerName, "")
 	if err != nil {
 		return realAgentRunner{}, err
 	}

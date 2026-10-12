@@ -24,6 +24,7 @@ import (
 
 func askCmd() *cobra.Command {
 	var providerName string
+	var modelOverride string
 	var plainOutput bool
 	var continueLast bool
 	var templateName string
@@ -89,6 +90,9 @@ func askCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if modelOverride != "" {
+				pcfg.Model = modelOverride
+			}
 			if _, err := provider.Get(pName); err != nil {
 				return err
 			}
@@ -138,10 +142,11 @@ func askCmd() *cobra.Command {
 				out = nil
 			}
 			resp, err := ask.Run(ctx, cfg, ask.Request{
-				ProviderName: providerName,
-				Query:        query,
-				History:      prior,
-				Out:          out,
+				ProviderName:  providerName,
+				Query:         query,
+				History:       prior,
+				Out:           out,
+				ModelOverride: modelOverride,
 			})
 			if err != nil {
 				return fmt.Errorf("%s: %w", pName, err)
@@ -180,6 +185,7 @@ func askCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&providerName, "provider", "p", "", "Provider to use (overrides default)")
+	cmd.Flags().StringVar(&modelOverride, "model", "", "Model to use for this run only (overrides config)")
 	cmd.Flags().BoolVar(&plainOutput, "plain", false, "Plain output — no borders (for scripting)")
 	cmd.Flags().BoolVar(&continueLast, "continue", false, "Continue the latest saved conversation")
 	cmd.Flags().StringVar(&templateName, "template", "", "Prompt template to apply")
@@ -193,6 +199,7 @@ func askCmd() *cobra.Command {
 
 func chatCmd() *cobra.Command {
 	var providerName string
+	var modelOverride string
 
 	cmd := &cobra.Command{
 		Use:   "chat",
@@ -206,6 +213,9 @@ func chatCmd() *cobra.Command {
 			pName, pcfg, err := cfg.ActiveProviderConfig(providerName)
 			if err != nil {
 				return err
+			}
+			if modelOverride != "" {
+				pcfg.Model = modelOverride
 			}
 			session := history.NewSession(pName, pcfg.Model)
 			storePath, err := history.DefaultPath()
@@ -233,10 +243,11 @@ func chatCmd() *cobra.Command {
 				}
 				prior := sessionMessages(session)
 				resp, err := ask.Run(rootCtx(), cfg, ask.Request{
-					ProviderName: providerName,
-					Query:        query,
-					History:      prior,
-					Out:          os.Stdout,
+					ProviderName:  providerName,
+					Query:         query,
+					History:       prior,
+					Out:           os.Stdout,
+					ModelOverride: modelOverride,
 				})
 				if err != nil {
 					return err
@@ -258,6 +269,7 @@ func chatCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&providerName, "provider", "p", "", "Provider to use")
+	cmd.Flags().StringVar(&modelOverride, "model", "", "Model to use for this run only (overrides config)")
 	return cmd
 }
 

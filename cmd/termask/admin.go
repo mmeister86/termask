@@ -663,7 +663,14 @@ _termask_ask() {
 
   [[ -z "$query" ]] && zle reset-prompt && return
 
-  termask "${args[@]}" -- "$query" | less -FIRX
+  # Opt-in: TERMASK_INSERT=1 pushes the plain answer into the edit buffer instead of paging.
+  if [[ "$TERMASK_INSERT" == "1" ]]; then
+    local answer
+    answer="$(termask "${args[@]}" --plain -- "$query")"
+    print -z -- "$answer"
+  else
+    termask "${args[@]}" -- "$query" | less -FIRX
+  fi
   zle reset-prompt
 }
 
@@ -697,8 +704,16 @@ _termask_ask() {
 
   [[ -z "$query" ]] && return
 
-  echo ""
-  termask "${args[@]}" -- "$query" | less -FIRX
+  # Opt-in: TERMASK_INSERT=1 puts the plain answer on the command line for editing instead of paging.
+  if [[ "$TERMASK_INSERT" == "1" ]]; then
+    local answer
+    answer="$(termask "${args[@]}" --plain -- "$query")"
+    READLINE_LINE="$answer"
+    READLINE_POINT=${#answer}
+  else
+    echo ""
+    termask "${args[@]}" -- "$query" | less -FIRX
+  fi
 }
 
 bind -x '"\C-k": _termask_ask'

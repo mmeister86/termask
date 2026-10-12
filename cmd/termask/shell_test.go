@@ -7,6 +7,23 @@ import (
 	agentpkg "github.com/mmeister86/termask/internal/agent"
 )
 
+func TestShellPluginsSupportInsertMode(t *testing.T) {
+	zsh := zshPlugin()
+	if !strings.Contains(zsh, "TERMASK_INSERT") {
+		t.Fatal("zsh plugin should honour TERMASK_INSERT")
+	}
+	if !strings.Contains(zsh, "print -z") {
+		t.Fatal("zsh plugin should push the answer to the edit buffer with print -z")
+	}
+	bash := bashPlugin()
+	if !strings.Contains(bash, "TERMASK_INSERT") {
+		t.Fatal("bash plugin should honour TERMASK_INSERT")
+	}
+	if !strings.Contains(bash, "READLINE_LINE") {
+		t.Fatal("bash plugin should set READLINE_LINE in insert mode")
+	}
+}
+
 func TestAskRendersByDefaultUnlessPlain(t *testing.T) {
 	if !shouldRender(false) {
 		t.Fatal("ask should render by default")

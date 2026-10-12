@@ -21,6 +21,7 @@ import (
 
 func agentCmd() *cobra.Command {
 	var providerName string
+	var modelOverride string
 	var maxSteps int
 	var files []string
 	var plainOutput bool
@@ -55,7 +56,7 @@ func agentCmd() *cobra.Command {
 			}
 
 			ctx := rootCtx()
-			model, err := agentpkg.NewProviderModel(ctx, cfg, providerName)
+			model, err := agentpkg.NewProviderModel(ctx, cfg, providerName, modelOverride)
 			if err != nil {
 				return err
 			}
@@ -109,6 +110,7 @@ func agentCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&providerName, "provider", "p", "", "Provider to use (overrides default)")
+	cmd.Flags().StringVar(&modelOverride, "model", "", "Model to use for this run only (overrides config)")
 	cmd.Flags().IntVar(&maxSteps, "max-steps", agentpkg.DefaultMaxSteps, "Maximum read-only agent steps")
 	cmd.Flags().StringArrayVar(&files, "file", nil, "Attach a text file as explicit context")
 	cmd.Flags().BoolVar(&plainOutput, "plain", false, "Plain output — no step display or markdown rendering")

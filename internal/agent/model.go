@@ -17,10 +17,13 @@ type ProviderModel struct {
 	model        string
 }
 
-func NewProviderModel(ctx context.Context, cfg config.Config, providerName string) (*ProviderModel, error) {
+func NewProviderModel(ctx context.Context, cfg config.Config, providerName, modelOverride string) (*ProviderModel, error) {
 	name, pcfg, err := cfg.ActiveProviderConfig(providerName)
 	if err != nil {
 		return nil, err
+	}
+	if modelOverride != "" {
+		pcfg.Model = modelOverride
 	}
 	p, err := provider.Get(name)
 	if err != nil {

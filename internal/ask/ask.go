@@ -14,6 +14,8 @@ type Request struct {
 	Query        string
 	History      []provider.Message
 	Out          io.Writer
+	// ModelOverride replaces a copy of the configured model for this run only.
+	ModelOverride string
 }
 
 type Response struct {
@@ -26,6 +28,9 @@ func Run(ctx context.Context, cfg config.Config, req Request) (Response, error) 
 	providerName, pcfg, err := cfg.ActiveProviderConfig(req.ProviderName)
 	if err != nil {
 		return Response{}, err
+	}
+	if req.ModelOverride != "" {
+		pcfg.Model = req.ModelOverride
 	}
 	p, err := provider.Get(providerName)
 	if err != nil {
