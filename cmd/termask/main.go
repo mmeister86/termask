@@ -4,9 +4,10 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 
-	"github.com/spf13/cobra"
 	"github.com/mmeister86/termask/internal/provider"
+	"github.com/spf13/cobra"
 
 	// Register all providers at startup via side-effect imports.
 	anthropicprovider "github.com/mmeister86/termask/internal/provider/anthropic"
@@ -47,12 +48,14 @@ func init() {
 	))
 }
 
-// appCtx is cancelled on Ctrl+C (SIGINT) so in-flight provider calls abort
-// instead of hanging until the server responds. Process-lifetime: no stop call.
-var appCtx, _ = signal.NotifyContext(context.Background(), os.Interrupt)
-
-// rootCtx returns the shared cancellable context for all commands.
-func rootCtx() context.Context { return appCtx }
+// rootCtx is the shared process-lifetime context, created lazily so the
+// SIGINT handler is registered only when first needed. The stop func is
+// released once the context is done, so Ctrl+C at idle prompts terminates.
+var rootCtx = sync.OnceValue(func() context.Context {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	go func() { <-ctx.Done(); stop() }()
+	return ctx
+})
 
 // turnCtx returns a fresh per-turn cancellable context for long-lived loops
 // (chat, agent session, TUI requests). Never reuse rootCtx() per turn: it is

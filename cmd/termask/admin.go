@@ -9,7 +9,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/spf13/cobra"
 	"github.com/mmeister86/termask/internal/config"
 	"github.com/mmeister86/termask/internal/doctor"
 	termexport "github.com/mmeister86/termask/internal/export"
@@ -19,13 +18,14 @@ import (
 	"github.com/mmeister86/termask/internal/safety"
 	prompttpl "github.com/mmeister86/termask/internal/template"
 	"github.com/mmeister86/termask/internal/ui"
+	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
 // readAPIKey reads an API key from stdin: masked via term.ReadPassword when
 // stdin is a terminal, otherwise a plain scanner fallback (piped input).
 // Unit-testable only via the non-terminal path.
-func readAPIKey() (string, error) {
+func readAPIKey(scanner *bufio.Scanner) (string, error) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
@@ -34,7 +34,6 @@ func readAPIKey() (string, error) {
 		}
 		return strings.TrimSpace(string(pw)), nil
 	}
-	scanner := bufio.NewScanner(os.Stdin)
 	if scanner.Scan() {
 		return strings.TrimSpace(scanner.Text()), nil
 	}
@@ -69,7 +68,7 @@ func initCmd() *cobra.Command {
 
 			if providerName != "ollama" && apiKey == "" {
 				fmt.Printf("API Key für %s: ", providerName)
-				key, err := readAPIKey()
+				key, err := readAPIKey(scanner)
 				if err != nil {
 					return err
 				}

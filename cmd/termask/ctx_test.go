@@ -4,6 +4,22 @@ import (
 	"testing"
 )
 
+// rootCtx() must return the same non-cancelled context on repeated calls
+// (lazy singleton): the SIGINT handler is registered once, and no stray
+// Ctrl+C from an earlier run poisons later commands.
+func TestRootCtxIsStableSingleton(t *testing.T) {
+	a := rootCtx()
+	b := rootCtx()
+	if a != b {
+		t.Fatal("rootCtx() returned different contexts on repeated calls")
+	}
+	select {
+	case <-a.Done():
+		t.Fatal("rootCtx() already cancelled")
+	default:
+	}
+}
+
 // Each turn/request in a long-lived loop must get a fresh cancellable
 // context: cancelling one turn's context must not poison later turns.
 func TestTurnCtxIsIndependentPerCall(t *testing.T) {

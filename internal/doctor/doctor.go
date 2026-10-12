@@ -81,5 +81,5 @@ func CheckLive(ctx context.Context, cfg config.Config, p provider.Provider) Item
 	if err != nil {
 		return Item{Level: LevelWarn, Message: fmt.Sprintf("live check: %s unreachable (%v)", p.Name(), err)}
 	}
-	return Item{Level: LevelOK, Message: fmt.Sprintf("live check: %s reachable (%d models)", p.Name(), len(models))}
+	return Item{Level: LevelOK, Message: fmt.Sprintf("live check: %s listed %d models", p.Name(), len(models))}
 }

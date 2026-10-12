@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mmeister86/termask/internal/config"
@@ -85,6 +86,9 @@ func TestCheckLiveFailureIsWarn(t *testing.T) {
 	if item.Level != LevelWarn {
 		t.Fatalf("Level = %q, want warn", item.Level)
 	}
+	if !strings.Contains(item.Message, "unreachable") {
+		t.Fatalf("Message = %q, want unreachable", item.Message)
+	}
 }
 
 func TestCheckLiveSuccessIsOK(t *testing.T) {
@@ -95,5 +99,8 @@ func TestCheckLiveSuccessIsOK(t *testing.T) {
 	}, p)
 	if item.Level != LevelOK {
 		t.Fatalf("Level = %q, want ok", item.Level)
+	}
+	if want := "live check: ollama listed 1 models"; item.Message != want {
+		t.Fatalf("Message = %q, want %q", item.Message, want)
 	}
 }
