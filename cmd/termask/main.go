@@ -54,6 +54,14 @@ var appCtx, _ = signal.NotifyContext(context.Background(), os.Interrupt)
 // rootCtx returns the shared cancellable context for all commands.
 func rootCtx() context.Context { return appCtx }
 
+// turnCtx returns a fresh per-turn cancellable context for long-lived loops
+// (chat, agent session, TUI requests). Never reuse rootCtx() per turn: it is
+// cancelled permanently by the first Ctrl+C, poisoning every later request.
+// Call stop when the turn finishes to release the signal handler.
+func turnCtx() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt)
+}
+
 func main() {
 	root := &cobra.Command{
 		Use:   "termask",

@@ -71,6 +71,7 @@ func agentCmd() *cobra.Command {
 
 			if strings.TrimSpace(goal) == "" {
 				scanner := bufio.NewScanner(os.Stdin)
+				scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 				var lines []string
 				for scanner.Scan() {
 					lines = append(lines, scanner.Text())
@@ -143,7 +144,8 @@ func runAgentSession(
 	}
 
 	runTurn := func(goal string) error {
-		resp, err := runner.RunStream(ctx, agentpkg.Request{
+		turnCtx, stop := turnCtx()
+		resp, err := runner.RunStream(turnCtx, agentpkg.Request{
 			Goal:     goal,
 			MaxSteps: maxSteps,
 			Context:  explicitContext,
@@ -151,6 +153,7 @@ func runAgentSession(
 		}, func(event agentpkg.Event) {
 			renderAgentEvent(event, maxSteps)
 		})
+		stop()
 		if err != nil {
 			return err
 		}
@@ -177,6 +180,7 @@ func runAgentSession(
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for {
 		fmt.Print("\ntermask agent › ")
 		if !scanner.Scan() {

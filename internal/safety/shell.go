@@ -42,6 +42,7 @@ func AnalyzeShell(answer string) Report {
 func extractLines(text string) []Command {
 	var commands []Command
 	scanner := bufio.NewScanner(strings.NewReader(text))
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -111,6 +112,10 @@ func isRecursiveForcedRm(tokens []string) bool {
 		}
 		var recursive, force bool
 		for _, flag := range tokens[i+1:] {
+			// A new command after a separator has its own flags.
+			if flag == ";" || flag == "&&" || flag == "||" || flag == "|" {
+				break
+			}
 			switch flag {
 			case "--recursive":
 				recursive = true
@@ -155,6 +160,9 @@ func isPipeToShell(tokens []string) bool {
 			continue
 		}
 		name = strings.Trim(name, "; &")
+		if i := strings.LastIndexByte(name, '/'); i >= 0 {
+			name = name[i+1:]
+		}
 		switch name {
 		case "sh", "bash", "zsh":
 			return true

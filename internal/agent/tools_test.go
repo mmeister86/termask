@@ -144,6 +144,41 @@ func TestToolsetSecretFileDenied(t *testing.T) {
 	}
 }
 
+func TestToolsetSearchTextExcludesSecrets(t *testing.T) {
+	workspace := t.TempDir()
+	secretValue := "SUPERSECRET-9f8a7b6c5d"
+	tomlSecret := "TOMLSECRET-1a2b3c4d5e"
+	if err := os.WriteFile(filepath.Join(workspace, ".env"), []byte("KEY="+secretValue+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// config.toml is a non-hidden secret basename: rg finds it workspace-wide.
+	if err := os.WriteFile(filepath.Join(workspace, "config.toml"), []byte("token = \""+tomlSecret+"\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "ok.txt"), []byte("nothing interesting\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := NewToolset(workspace)
+	for _, secret := range []string{secretValue, tomlSecret} {
+		wide := tools.Execute(context.Background(), ToolCall{
+			Tool: "search_text",
+			Args: map[string]string{"pattern": secret},
+		})
+		if strings.Contains(wide.Output, secret) {
+			t.Fatalf("workspace search leaked secret: %q", wide.Output)
+		}
+	}
+
+	explicit := tools.Execute(context.Background(), ToolCall{
+		Tool: "search_text",
+		Args: map[string]string{"pattern": secretValue, "path": ".env"},
+	})
+	if explicit.OK {
+		t.Fatalf("search_text with explicit secret path succeeded: %q", explicit.Output)
+	}
+}
+
 func TestIsSecretPathPatterns(t *testing.T) {
 	denied := []string{".env", ".env.local", "server.pem", "server.key", "id_rsa", "id_rsa.pub", "config.toml", "sub/dir/.env"}
 	for _, p := range denied {

@@ -55,6 +55,7 @@ func askCmd() *cobra.Command {
 				query = strings.Join(args, " ")
 			} else {
 				scanner := bufio.NewScanner(os.Stdin)
+				scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 				var lines []string
 				for scanner.Scan() {
 					lines = append(lines, scanner.Text())
@@ -241,6 +242,7 @@ func chatCmd() *cobra.Command {
 			}
 			store := history.NewStoreWithLimit(storePath, cfg.HistoryLimit)
 			scanner := bufio.NewScanner(os.Stdin)
+			scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 			ui.Prompt.Fprintf(os.Stderr, "termask chat [%s/%s] — /exit beendet, /new startet neu\n", pName, pcfg.Model)
 			for {
 				ui.Prompt.Fprint(os.Stderr, "\n› ")
@@ -259,13 +261,15 @@ func chatCmd() *cobra.Command {
 					continue
 				}
 				prior := sessionMessages(session)
-				resp, err := ask.Run(rootCtx(), cfg, ask.Request{
+				turnCtx, stop := turnCtx()
+				resp, err := ask.Run(turnCtx, cfg, ask.Request{
 					ProviderName:  providerName,
 					Query:         query,
 					History:       prior,
 					Out:           os.Stdout,
 					ModelOverride: modelOverride,
 				})
+				stop()
 				if err != nil {
 					return err
 				}

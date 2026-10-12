@@ -59,6 +59,7 @@ func stubConfig() config.Config {
 }
 
 func TestRunModelOverride(t *testing.T) {
+	seenModel = ""
 	provider.Register(modelOverrideStub{})
 	cfg := stubConfig()
 	cfg.DefaultProvider = "stub-model-override-test"

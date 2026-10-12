@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -157,6 +158,13 @@ func (w teaMsgWriter) Write(p []byte) (int, error) {
 }
 
 var _ io.Writer = teaMsgWriter{}
+
+// freshRequestCtx returns a new per-request cancellable context. The model's
+// stored ctx is process-lifetime and stays cancelled after the first Ctrl+C,
+// so each request must derive its own ctx. Call stop when the request finishes.
+func freshRequestCtx() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt)
+}
 
 func Run(ctx context.Context, cfg config.Config) error {
 	m, err := newModel(ctx, cfg, modelOptions{})
@@ -397,7 +405,9 @@ func (m model) runChat(query string) command {
 	return func() tea.Msg {
 		ch := make(chan tea.Msg, 32)
 		go func() {
-			resp, err := m.chatRunner.RunChat(m.ctx, m.cfg, ask.Request{
+			reqCtx, stop := freshRequestCtx()
+			defer stop()
+			resp, err := m.chatRunner.RunChat(reqCtx, m.cfg, ask.Request{
 				ProviderName: m.providerName,
 				Query:        query,
 				History:      historyMessages,
@@ -415,7 +425,9 @@ func (m model) runAgent(goal string) command {
 	return func() tea.Msg {
 		ch := make(chan tea.Msg, 32)
 		go func() {
-			resp, err := m.agentRunner.RunAgent(m.ctx, agent.Request{
+			reqCtx, stop := freshRequestCtx()
+			defer stop()
+			resp, err := m.agentRunner.RunAgent(reqCtx, agent.Request{
 				Goal:     goal,
 				MaxSteps: agent.DefaultMaxSteps,
 				History:  prior,

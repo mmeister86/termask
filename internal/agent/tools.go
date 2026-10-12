@@ -97,6 +97,9 @@ func (t *Toolset) searchText(ctx context.Context, pattern, path string) ToolResu
 		if err != nil {
 			return ToolResult{Tool: "search_text", OK: false, Error: err.Error()}
 		}
+		if isSecretPath(rel) {
+			return ToolResult{Tool: "search_text", OK: false, Error: rel + " is a secret file: search denied"}
+		}
 		info, err := os.Stat(full)
 		if err != nil {
 			return ToolResult{Tool: "search_text", OK: false, Error: err.Error()}
@@ -113,7 +116,26 @@ func (t *Toolset) searchText(ctx context.Context, pattern, path string) ToolResu
 	if err != nil && len(out) == 0 {
 		return ToolResult{Tool: "search_text", OK: true, Output: ""}
 	}
-	return ToolResult{Tool: "search_text", OK: true, Output: limitOutput(string(out))}
+	return ToolResult{Tool: "search_text", OK: true, Output: limitOutput(string(filterSecretMatches(out)))}
+}
+
+// filterSecretMatches drops rg -n output lines (path:line:content) whose file
+// part names a secret file, so workspace searches never return secret content.
+func filterSecretMatches(out []byte) []byte {
+	var kept strings.Builder
+	for _, line := range strings.Split(string(out), "\n") {
+		if line == "" {
+			continue
+		}
+		if i := strings.IndexByte(line, ':'); i >= 0 {
+			if isSecretPath(filepath.Base(line[:i])) {
+				continue
+			}
+		}
+		kept.WriteString(line)
+		kept.WriteByte('\n')
+	}
+	return []byte(kept.String())
 }
 
 func (t *Toolset) gitStatus(ctx context.Context) ToolResult {

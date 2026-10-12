@@ -104,6 +104,9 @@ func (s Store) Save(session Session) error {
 	}
 	if s.limit > 0 && len(sessions) > s.limit {
 		sort.Slice(sessions, func(i, j int) bool {
+			if sessions[i].UpdatedAt.Equal(sessions[j].UpdatedAt) {
+				return sessions[i].ID < sessions[j].ID
+			}
 			return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 		})
 		sessions = sessions[:s.limit]
@@ -168,6 +171,9 @@ func (s Store) List() ([]Session, error) {
 		sessions = append(sessions, session)
 	}
 	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].UpdatedAt.Equal(sessions[j].UpdatedAt) {
+			return sessions[i].ID < sessions[j].ID
+		}
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
 	return sessions, nil
@@ -202,5 +208,9 @@ func (s Store) writeAll(sessions []Session) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
