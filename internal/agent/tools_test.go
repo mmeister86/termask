@@ -179,6 +179,27 @@ func TestToolsetSearchTextExcludesSecrets(t *testing.T) {
 	}
 }
 
+func TestToolsetSearchTextPatternAsFlag(t *testing.T) {
+	workspace := t.TempDir()
+	marker := "MARKER-7f3a9b2c1e"
+	if err := os.WriteFile(filepath.Join(workspace, "config.toml"), []byte("token = \""+marker+"\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "ok.txt"), []byte("nothing interesting\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := NewToolset(workspace)
+	// Pattern that looks like an rg flag must be treated as a literal pattern.
+	injected := tools.Execute(context.Background(), ToolCall{
+		Tool: "search_text",
+		Args: map[string]string{"pattern": "--no-filename", "path": "."},
+	})
+	if strings.Contains(injected.Output, marker) {
+		t.Fatalf("pattern-as-flag leaked secret: %q", injected.Output)
+	}
+}
+
 func TestIsSecretPathPatterns(t *testing.T) {
 	denied := []string{".env", ".env.local", "server.pem", "server.key", "id_rsa", "id_rsa.pub", "config.toml", "sub/dir/.env"}
 	for _, p := range denied {

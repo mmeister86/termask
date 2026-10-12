@@ -91,7 +91,7 @@ func (t *Toolset) searchText(ctx context.Context, pattern, path string) ToolResu
 	if strings.TrimSpace(pattern) == "" {
 		return ToolResult{Tool: "search_text", OK: false, Error: "pattern is required"}
 	}
-	args := []string{"-n", pattern}
+	args := []string{"-n", "--with-filename", "-e", pattern}
 	if path != "" {
 		full, rel, err := t.resolvePath(path)
 		if err != nil {
@@ -105,9 +105,9 @@ func (t *Toolset) searchText(ctx context.Context, pattern, path string) ToolResu
 			return ToolResult{Tool: "search_text", OK: false, Error: err.Error()}
 		}
 		if info.IsDir() {
-			args = append(args, rel)
+			args = append(args, "--", rel)
 		} else {
-			args = append(args, rel)
+			args = append(args, "--", rel)
 		}
 	}
 	cmd := exec.CommandContext(ctx, "rg", args...)
