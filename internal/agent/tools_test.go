@@ -90,6 +90,75 @@ func TestRunCheckAllowsOnlyGoTestCommands(t *testing.T) {
 	}
 }
 
+func TestToolsetSymlinkEscapeDenied(t *testing.T) {
+	workspace := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside-secret.txt")
+	if err := os.WriteFile(outside, []byte("topsecret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(workspace, "link.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := NewToolset(workspace)
+	result := tools.Execute(context.Background(), ToolCall{
+		Tool: "read_file",
+		Args: map[string]string{"path": "link.txt"},
+	})
+	if result.OK {
+		t.Fatal("read_file via symlink escape succeeded")
+	}
+	if !strings.Contains(result.Error, "outside workspace") {
+		t.Fatalf("error = %q, want outside workspace", result.Error)
+	}
+}
+
+func TestToolsetSecretFileDenied(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, ".env"), []byte("KEY=secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "ok.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tools := NewToolset(workspace)
+	denied := tools.Execute(context.Background(), ToolCall{
+		Tool: "read_file",
+		Args: map[string]string{"path": ".env"},
+	})
+	if denied.OK {
+		t.Fatal("read_file .env succeeded")
+	}
+
+	allowed := tools.Execute(context.Background(), ToolCall{
+		Tool: "read_file",
+		Args: map[string]string{"path": "ok.txt"},
+	})
+	if !allowed.OK {
+		t.Fatalf("normal file read failed: %+v", allowed)
+	}
+	if !strings.Contains(allowed.Output, "hello") {
+		t.Fatalf("normal file output = %q, want hello", allowed.Output)
+	}
+}
+
+func TestIsSecretPathPatterns(t *testing.T) {
+	denied := []string{".env", ".env.local", "server.pem", "server.key", "id_rsa", "id_rsa.pub", "config.toml", "sub/dir/.env"}
+	for _, p := range denied {
+		if !isSecretPath(p) {
+			t.Errorf("isSecretPath(%q) = false, want true", p)
+		}
+	}
+	allowed := []string{"ok.txt", "env.go", "mykey.txt", "my_id_rsa.txt"}
+	for _, p := range allowed {
+		if isSecretPath(p) {
+			t.Errorf("isSecretPath(%q) = true, want false", p)
+		}
+	}
+}
+
 func TestUnknownToolReturnsToolError(t *testing.T) {
 	tools := NewToolset(t.TempDir())
 	result := tools.Execute(context.Background(), ToolCall{Tool: "write_file"})
