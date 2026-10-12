@@ -170,7 +170,7 @@ func agentCmd() *cobra.Command {
 			printAgentResponse(resp, maxSteps, plainOutput)
 
 			if cfg.HistoryEnabled {
-				store, err := defaultHistoryStore()
+				store, err := defaultHistoryStore(cfg.HistoryLimit)
 				if err != nil {
 					return err
 				}
@@ -209,7 +209,7 @@ func runAgentSession(
 	var store history.Store
 	if cfg.HistoryEnabled {
 		var err error
-		store, err = defaultHistoryStore()
+		store, err = defaultHistoryStore(cfg.HistoryLimit)
 		if err != nil {
 			return err
 		}
@@ -382,7 +382,7 @@ func askCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				store = history.NewStore(historyPath)
+				store = history.NewStoreWithLimit(historyPath, cfg.HistoryLimit)
 				if continueLast {
 					session, err = store.Latest()
 					if err != nil {
@@ -481,7 +481,7 @@ func chatCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store := history.NewStore(storePath)
+			store := history.NewStoreWithLimit(storePath, cfg.HistoryLimit)
 			scanner := bufio.NewScanner(os.Stdin)
 			ui.Prompt.Fprintf(os.Stderr, "termask chat [%s/%s] — /exit beendet, /new startet neu\n", pName, pcfg.Model)
 			for {
@@ -798,7 +798,7 @@ func historyCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List saved sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := defaultHistoryStore()
+			store, err := defaultHistoryStore(0)
 			if err != nil {
 				return err
 			}
@@ -820,7 +820,7 @@ func historyCmd() *cobra.Command {
 		Short: "Show a session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := defaultHistoryStore()
+			store, err := defaultHistoryStore(0)
 			if err != nil {
 				return err
 			}
@@ -837,7 +837,7 @@ func historyCmd() *cobra.Command {
 		Short: "Export a session as Markdown",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := defaultHistoryStore()
+			store, err := defaultHistoryStore(0)
 			if err != nil {
 				return err
 			}
@@ -852,7 +852,7 @@ func historyCmd() *cobra.Command {
 		Use:   "clear",
 		Short: "Delete saved history",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := defaultHistoryStore()
+			store, err := defaultHistoryStore(0)
 			if err != nil {
 				return err
 			}
@@ -1067,12 +1067,12 @@ func registerConfiguredProviders(cfg config.Config) {
 	}
 }
 
-func defaultHistoryStore() (history.Store, error) {
+func defaultHistoryStore(limit int) (history.Store, error) {
 	path, err := history.DefaultPath()
 	if err != nil {
 		return history.Store{}, err
 	}
-	return history.NewStore(path), nil
+	return history.NewStoreWithLimit(path, limit), nil
 }
 
 func sessionMessages(session history.Session) []provider.Message {
