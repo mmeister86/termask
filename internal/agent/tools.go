@@ -64,6 +64,9 @@ func (t *Toolset) readFile(path string) ToolResult {
 	if err != nil {
 		return ToolResult{Tool: "read_file", OK: false, Error: err.Error()}
 	}
+	if isSecretPath(rel) {
+		return ToolResult{Tool: "read_file", OK: false, Error: rel + " is a secret file: content reads denied"}
+	}
 	info, err := os.Stat(full)
 	if err != nil {
 		return ToolResult{Tool: "read_file", OK: false, Error: err.Error()}
@@ -88,20 +91,23 @@ func (t *Toolset) searchText(ctx context.Context, pattern, path string) ToolResu
 	if strings.TrimSpace(pattern) == "" {
 		return ToolResult{Tool: "search_text", OK: false, Error: "pattern is required"}
 	}
-	args := []string{"-n", pattern}
+	args := []string{"-n", "--with-filename", "-e", pattern}
 	if path != "" {
 		full, rel, err := t.resolvePath(path)
 		if err != nil {
 			return ToolResult{Tool: "search_text", OK: false, Error: err.Error()}
+		}
+		if isSecretPath(rel) {
+			return ToolResult{Tool: "search_text", OK: false, Error: rel + " is a secret file: search denied"}
 		}
 		info, err := os.Stat(full)
 		if err != nil {
 			return ToolResult{Tool: "search_text", OK: false, Error: err.Error()}
 		}
 		if info.IsDir() {
-			args = append(args, rel)
+			args = append(args, "--", rel)
 		} else {
-			args = append(args, rel)
+			args = append(args, "--", rel)
 		}
 	}
 	cmd := exec.CommandContext(ctx, "rg", args...)
@@ -110,7 +116,26 @@ func (t *Toolset) searchText(ctx context.Context, pattern, path string) ToolResu
 	if err != nil && len(out) == 0 {
 		return ToolResult{Tool: "search_text", OK: true, Output: ""}
 	}
-	return ToolResult{Tool: "search_text", OK: true, Output: limitOutput(string(out))}
+	return ToolResult{Tool: "search_text", OK: true, Output: limitOutput(string(filterSecretMatches(out)))}
+}
+
+// filterSecretMatches drops rg -n output lines (path:line:content) whose file
+// part names a secret file, so workspace searches never return secret content.
+func filterSecretMatches(out []byte) []byte {
+	var kept strings.Builder
+	for _, line := range strings.Split(string(out), "\n") {
+		if line == "" {
+			continue
+		}
+		if i := strings.IndexByte(line, ':'); i >= 0 {
+			if isSecretPath(filepath.Base(line[:i])) {
+				continue
+			}
+		}
+		kept.WriteString(line)
+		kept.WriteByte('\n')
+	}
+	return []byte(kept.String())
 }
 
 func (t *Toolset) gitStatus(ctx context.Context) ToolResult {
@@ -172,7 +197,58 @@ func (t *Toolset) resolvePath(path string) (string, string, error) {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
 		return "", "", fmt.Errorf("%s is outside workspace", path)
 	}
+	if err := checkSymlinkEscape(workspace, full, path); err != nil {
+		return "", "", err
+	}
 	return full, filepath.ToSlash(rel), nil
+}
+
+func checkSymlinkEscape(workspace, full, origPath string) error {
+	resolved := full
+	if _, err := os.Lstat(full); err == nil {
+		eval, err := filepath.EvalSymlinks(full)
+		if err != nil {
+			return fmt.Errorf("%s is outside workspace", origPath)
+		}
+		resolved = eval
+	} else {
+		// Non-existent path: resolve parent so a symlinked dir can't smuggle escapes.
+		parent := filepath.Dir(full)
+		evalParent, err := filepath.EvalSymlinks(parent)
+		if err != nil {
+			return nil // Parent missing; lexical check above already passed.
+		}
+		resolved = filepath.Join(evalParent, filepath.Base(full))
+	}
+	resolvedWorkspace, err := filepath.EvalSymlinks(workspace)
+	if err != nil {
+		resolvedWorkspace = workspace
+	}
+	rel, err := filepath.Rel(resolvedWorkspace, resolved)
+	if err != nil {
+		return fmt.Errorf("%s is outside workspace", origPath)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("%s is outside workspace", origPath)
+	}
+	return nil
+}
+
+func isSecretPath(rel string) bool {
+	base := filepath.Base(filepath.ToSlash(rel))
+	if base == ".env" || strings.HasPrefix(base, ".env.") {
+		return true
+	}
+	if base == "config.toml" {
+		return true
+	}
+	if strings.HasPrefix(base, "id_rsa") {
+		return true
+	}
+	if strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key") {
+		return true
+	}
+	return false
 }
 
 func allowGoTest(fields []string) bool {

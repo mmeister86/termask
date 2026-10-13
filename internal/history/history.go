@@ -30,7 +30,8 @@ type Session struct {
 }
 
 type Store struct {
-	path string
+	path  string
+	limit int
 }
 
 func DefaultPath() (string, error) {
@@ -43,6 +44,10 @@ func DefaultPath() (string, error) {
 
 func NewStore(path string) Store {
 	return Store{path: path}
+}
+
+func NewStoreWithLimit(path string, limit int) Store {
+	return Store{path: path, limit: limit}
 }
 
 func NewSession(providerName, model string) Session {
@@ -82,6 +87,11 @@ func (s *Session) add(role, content string) {
 }
 
 func (s Store) Save(session Session) error {
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	sessions, err := s.List()
 	if err != nil {
 		return err
@@ -96,6 +106,15 @@ func (s Store) Save(session Session) error {
 	}
 	if !replaced {
 		sessions = append(sessions, session)
+	}
+	if s.limit > 0 && len(sessions) > s.limit {
+		sort.Slice(sessions, func(i, j int) bool {
+			if sessions[i].UpdatedAt.Equal(sessions[j].UpdatedAt) {
+				return sessions[i].ID < sessions[j].ID
+			}
+			return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
+		})
+		sessions = sessions[:s.limit]
 	}
 	return s.writeAll(sessions)
 }
@@ -136,6 +155,7 @@ func (s Store) List() ([]Session, error) {
 
 	byID := map[string]Session{}
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -156,6 +176,9 @@ func (s Store) List() ([]Session, error) {
 		sessions = append(sessions, session)
 	}
 	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].UpdatedAt.Equal(sessions[j].UpdatedAt) {
+			return sessions[i].ID < sessions[j].ID
+		}
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
 	return sessions, nil
@@ -173,16 +196,26 @@ func (s Store) writeAll(sessions []Session) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(s.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	file, err := os.CreateTemp(filepath.Dir(s.path), ".history-*.tmp")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	tmp := file.Name()
 	enc := json.NewEncoder(file)
 	for _, session := range sessions {
 		if err := enc.Encode(session); err != nil {
+			file.Close()
+			os.Remove(tmp)
 			return err
 		}
+	}
+	if err := file.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, s.path); err != nil {
+		os.Remove(tmp)
+		return err
 	}
 	return nil
 }

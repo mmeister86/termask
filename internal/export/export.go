@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yourusername/termask/internal/history"
+	"github.com/mmeister86/termask/internal/history"
 )
 
 func SessionMarkdown(session history.Session) string {

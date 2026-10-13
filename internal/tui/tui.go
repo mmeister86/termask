@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,11 +16,11 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/yourusername/termask/internal/agent"
-	"github.com/yourusername/termask/internal/ask"
-	"github.com/yourusername/termask/internal/config"
-	"github.com/yourusername/termask/internal/history"
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/agent"
+	"github.com/mmeister86/termask/internal/ask"
+	"github.com/mmeister86/termask/internal/config"
+	"github.com/mmeister86/termask/internal/history"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 type command = tea.Cmd
@@ -57,7 +58,7 @@ type realAgentRunner struct {
 }
 
 func newRealAgentRunner(ctx context.Context, cfg config.Config, providerName, workspace string) (realAgentRunner, error) {
-	model, err := agent.NewProviderModel(ctx, cfg, providerName)
+	model, err := agent.NewProviderModel(ctx, cfg, providerName, "")
 	if err != nil {
 		return realAgentRunner{}, err
 	}
@@ -158,6 +159,13 @@ func (w teaMsgWriter) Write(p []byte) (int, error) {
 
 var _ io.Writer = teaMsgWriter{}
 
+// freshRequestCtx returns a new per-request cancellable context. The model's
+// stored ctx is process-lifetime and stays cancelled after the first Ctrl+C,
+// so each request must derive its own ctx. Call stop when the request finishes.
+func freshRequestCtx() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt)
+}
+
 func Run(ctx context.Context, cfg config.Config) error {
 	m, err := newModel(ctx, cfg, modelOptions{})
 	if err != nil {
@@ -207,7 +215,7 @@ func newModel(ctx context.Context, cfg config.Config, opts modelOptions) (model,
 		if err != nil {
 			return model{}, err
 		}
-		store = history.NewStore(path)
+		store = history.NewStoreWithLimit(path, cfg.HistoryLimit)
 	}
 
 	return model{
@@ -390,11 +398,16 @@ func (m model) submit() (model, command) {
 }
 
 func (m model) runChat(query string) command {
-	historyMessages := sessionMessages(m.session)
+	historyMessages := make([]provider.Message, 0, len(m.session.Messages))
+	for _, msg := range m.session.Messages {
+		historyMessages = append(historyMessages, provider.Message{Role: msg.Role, Content: msg.Content})
+	}
 	return func() tea.Msg {
 		ch := make(chan tea.Msg, 32)
 		go func() {
-			resp, err := m.chatRunner.RunChat(m.ctx, m.cfg, ask.Request{
+			reqCtx, stop := freshRequestCtx()
+			defer stop()
+			resp, err := m.chatRunner.RunChat(reqCtx, m.cfg, ask.Request{
 				ProviderName: m.providerName,
 				Query:        query,
 				History:      historyMessages,
@@ -412,7 +425,9 @@ func (m model) runAgent(goal string) command {
 	return func() tea.Msg {
 		ch := make(chan tea.Msg, 32)
 		go func() {
-			resp, err := m.agentRunner.RunAgent(m.ctx, agent.Request{
+			reqCtx, stop := freshRequestCtx()
+			defer stop()
+			resp, err := m.agentRunner.RunAgent(reqCtx, agent.Request{
 				Goal:     goal,
 				MaxSteps: agent.DefaultMaxSteps,
 				History:  prior,
@@ -1006,14 +1021,6 @@ func roleStyle(role string) lipgloss.Style {
 	default:
 		return dimStyle
 	}
-}
-
-func sessionMessages(session history.Session) []provider.Message {
-	messages := make([]provider.Message, 0, len(session.Messages))
-	for _, msg := range session.Messages {
-		messages = append(messages, provider.Message{Role: msg.Role, Content: msg.Content})
-	}
-	return messages
 }
 
 func agentHistorySummary(resp agent.Response) string {

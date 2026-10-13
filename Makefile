@@ -1,10 +1,13 @@
 BIN     := termask
 INSTALL := $(HOME)/.local/bin
 
-.PHONY: build install shell-zsh shell-bash clean
+.PHONY: build install shell-zsh shell-bash clean test
 
 build:
 	go build -buildvcs=false -o $(BIN) ./cmd/termask
+
+test:
+	go vet ./... && go test ./...
 
 install: build
 	mkdir -p $(INSTALL)

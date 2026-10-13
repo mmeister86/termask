@@ -4,21 +4,52 @@ import (
 	"strings"
 	"testing"
 
-	agentpkg "github.com/yourusername/termask/internal/agent"
+	agentpkg "github.com/mmeister86/termask/internal/agent"
 )
 
+func TestShellPluginsSupportInsertMode(t *testing.T) {
+	zsh := zshPlugin()
+	if !strings.Contains(zsh, "TERMASK_INSERT") {
+		t.Fatal("zsh plugin should honour TERMASK_INSERT")
+	}
+	if !strings.Contains(zsh, "print -z") {
+		t.Fatal("zsh plugin should push the answer to the edit buffer with print -z")
+	}
+	bash := bashPlugin()
+	if !strings.Contains(bash, "TERMASK_INSERT") {
+		t.Fatal("bash plugin should honour TERMASK_INSERT")
+	}
+	if !strings.Contains(bash, "READLINE_LINE") {
+		t.Fatal("bash plugin should set READLINE_LINE in insert mode")
+	}
+}
+
 func TestAskRendersByDefaultUnlessPlain(t *testing.T) {
-	if !shouldRenderAskOutput(false) {
+	if !shouldRender(false) {
 		t.Fatal("ask should render by default")
 	}
-	if shouldRenderAskOutput(true) {
+	if shouldRender(true) {
 		t.Fatal("ask --plain should disable rendering")
 	}
 }
 
+func TestShellPluginsDoNotUseEval(t *testing.T) {
+	for name, plugin := range map[string]string{"zsh": zshPlugin(), "bash": bashPlugin()} {
+		if strings.Contains(plugin, "eval") {
+			t.Fatalf("%s plugin must not use eval", name)
+		}
+		if !strings.Contains(plugin, `-- "$query"`) {
+			t.Fatalf("%s plugin should pass query as -- \"$query\"", name)
+		}
+	}
+}
+
 func TestShellPluginsUseDefaultRenderedAskOutput(t *testing.T) {
-	if !strings.Contains(zshPlugin(), "termask ask ") {
+	if !strings.Contains(zshPlugin(), `termask "${args[@]}"`) {
 		t.Fatal("zsh plugin should call termask ask")
+	}
+	if !strings.Contains(bashPlugin(), `termask "${args[@]}"`) {
+		t.Fatal("bash plugin should call termask ask")
 	}
 	if strings.Contains(zshPlugin(), "--render") {
 		t.Fatal("zsh plugin should not need --render anymore")
@@ -42,10 +73,10 @@ func TestAgentCommandExposesExpectedFlags(t *testing.T) {
 }
 
 func TestAgentRendersByDefaultUnlessPlain(t *testing.T) {
-	if !shouldRenderAgentOutput(false) {
+	if !shouldRender(false) {
 		t.Fatal("agent should render by default")
 	}
-	if shouldRenderAgentOutput(true) {
+	if shouldRender(true) {
 		t.Fatal("agent --plain should disable rendering")
 	}
 }

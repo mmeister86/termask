@@ -27,7 +27,7 @@ done
 ## Installation
 
 ```bash
-git clone https://github.com/you/termask && cd termask
+git clone https://github.com/mmeister86/termask && cd termask
 make install          # → ~/.local/bin/termask
 
 termask init          # Anthropic API Key einrichten (Standard)

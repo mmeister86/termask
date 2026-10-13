@@ -4,16 +4,14 @@
 package openai
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
-	"github.com/yourusername/termask/internal/provider"
+	"github.com/mmeister86/termask/internal/provider"
 )
 
 const defaultBaseURL = "https://api.openai.com/v1/chat/completions"
@@ -150,27 +148,14 @@ func (p *Provider) AskMessages(
 		return fmt.Errorf("%s API %d: %s", p.name, resp.StatusCode, raw)
 	}
 
-	return readSSE(resp.Body, out)
-}
-
-func readSSE(r io.Reader, out io.Writer) error {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
-		}
+	return provider.ScanSSE(resp.Body, func(data string) error {
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
+			return nil
 		}
 		if len(chunk.Choices) > 0 {
 			fmt.Fprint(out, chunk.Choices[0].Delta.Content)
 		}
-	}
-	return scanner.Err()
+		return nil
+	})
 }
